@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Avalon Assist — Utilization</title>
+<style>
+  :root {
+    --navy:#315280; --teal:#1c80b8; --green:#8FA93E; --green-soft:#abc269; --blue:#abb9d4;
+    --ink:#1B2C3B; --soft:#4C6070; --mute:#8093A1;
+    --bg:#EEF3F8; --card:#FFFFFF; --hair:#DCE6EF; --hair2:#EAF1F7;
+    --good:#3E8E5A; --warn:#E0A32E; --bad:#C2603E;
+    --shadow:0 1px 3px rgba(26,46,61,.06), 0 8px 28px rgba(26,46,61,.07);
+    --mono:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; }
+  .logo svg { display:block; width:100%; height:100%; }
+  .top .logo svg { height:34px; width:auto; }
+  body { background:var(--bg); color:var(--ink); font-family:var(--sans); font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .num { font-variant-numeric:tabular-nums; }
+  h1,h2,h3 { margin:0; }
+  button { font-family:inherit; cursor:pointer; }
+
+  /* gate */
+  #gate { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .gate-card { width:100%; max-width:380px; text-align:center; }
+  .gate-card .logo { width:190px; margin:0 auto 22px; display:block; }
+  .gate-card h1 { font-size:19px; color:var(--navy); letter-spacing:.14em; text-transform:uppercase; font-weight:700; }
+  .gate-card p { color:var(--soft); font-size:14px; margin:8px 0 22px; }
+  .gate-form { display:flex; gap:8px; }
+  .gate-form input { flex:1; min-width:0; padding:11px 14px; border:1px solid var(--hair); border-radius:10px; font-size:15px; background:#fff; }
+  .gate-form input:focus { outline:none; border-color:var(--teal); box-shadow:0 0 0 3px rgba(28,128,184,.14); }
+  .gate-form button { background:var(--navy); color:#fff; border:0; border-radius:10px; padding:0 20px; font-weight:600; font-size:14px; }
+  .gate-form button:hover { background:var(--teal); }
+  .gate-err { color:var(--bad); font-size:13px; margin-top:12px; min-height:18px; }
+
+  /* app shell */
+  #app { display:none; }
+  header.top { position:sticky; top:0; z-index:20; background:rgba(255,255,255,.9); backdrop-filter:blur(10px); border-bottom:1px solid var(--hair); }
+  .top-in { max-width:1200px; margin:0 auto; padding:14px 24px; display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+  .top .logo { height:34px; }
+  .top .titles { margin-right:auto; }
+  .top .titles .k { font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--teal); font-weight:700; }
+  .top .titles .t { font-size:17px; font-weight:700; color:var(--navy); line-height:1.15; }
+  .top .stamp { font-family:var(--mono); font-size:11px; color:var(--mute); letter-spacing:.03em; }
+  .top .lock { border:1px solid var(--hair); background:#fff; color:var(--soft); border-radius:8px; padding:7px 12px; font-size:12px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; display:inline-flex; align-items:center; gap:7px; }
+  .top .lock:hover { color:var(--bad); border-color:currentColor; }
+  .top .lock svg { width:14px; height:14px; }
+
+  .wrap { max-width:1200px; margin:0 auto; padding:22px 24px 70px; }
+
+  /* filters */
+  .filters { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:20px; }
+  .sel { position:relative; }
+  .sel select { appearance:none; background:#fff; border:1px solid var(--hair); border-radius:9px; padding:8px 30px 8px 12px; font-size:13px; color:var(--ink); font-family:inherit; cursor:pointer; }
+  .sel::after { content:"▾"; position:absolute; right:11px; top:50%; transform:translateY(-50%); color:var(--mute); font-size:11px; pointer-events:none; }
+  .sel select:focus { outline:none; border-color:var(--teal); }
+  .filters .reset { border:1px solid transparent; background:none; color:var(--teal); font-size:12.5px; font-weight:600; padding:8px 6px; }
+  .filters .reset:hover { text-decoration:underline; }
+  .filters .count { margin-left:auto; font-size:12.5px; color:var(--mute); font-family:var(--mono); }
+
+  /* grid + panels */
+  .grid { display:grid; grid-template-columns:repeat(12,1fr); gap:16px; }
+  .panel { background:var(--card); border:1px solid var(--hair); border-radius:14px; box-shadow:var(--shadow); padding:18px 20px; min-width:0; }
+  .span3{grid-column:span 3} .span4{grid-column:span 4} .span5{grid-column:span 5}
+  .span6{grid-column:span 6} .span7{grid-column:span 7} .span8{grid-column:span 8} .span12{grid-column:span 12}
+  @media(max-width:900px){ .span3,.span4,.span5,.span6,.span7,.span8{grid-column:span 12} }
+  .kicker { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--mute); font-weight:700; margin-bottom:14px; }
+  .kicker .hint { color:var(--mute); font-weight:400; letter-spacing:0; text-transform:none; }
+
+  /* KPI band */
+  .kpis { display:grid; grid-template-columns:repeat(6,1fr); gap:14px; margin-bottom:18px; }
+  @media(max-width:900px){ .kpis{ grid-template-columns:repeat(2,1fr);} }
+  .kpi { background:var(--card); border:1px solid var(--hair); border-radius:14px; box-shadow:var(--shadow); padding:15px 16px; position:relative; overflow:hidden; }
+  .kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--accent,var(--teal)); }
+  .kpi .k { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); font-weight:600; }
+  .kpi .v { font-size:26px; font-weight:700; color:var(--navy); line-height:1.15; margin-top:6px; letter-spacing:-.01em; }
+  .kpi .s { font-size:11.5px; color:var(--soft); margin-top:3px; }
+
+  /* horizontal bars */
+  .bars { display:flex; flex-direction:column; gap:11px; }
+  .bar { display:grid; grid-template-columns:130px 1fr auto; align-items:center; gap:12px; }
+  .bar .lbl { font-size:12.5px; color:var(--soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bar .track { display:block; height:22px; background:var(--hair2); border-radius:6px; overflow:hidden; }
+  .bar .fill { display:block; height:100%; border-radius:6px; background:var(--teal); min-width:2px; transition:width .6s cubic-bezier(.2,.8,.25,1); }
+  .bar .val { font-size:12.5px; font-weight:600; color:var(--ink); white-space:nowrap; }
+  .bar .val .sub { color:var(--mute); font-weight:400; font-size:11px; }
+
+  /* funnel */
+  .funnel { display:flex; flex-direction:column; gap:10px; }
+  .fstage { display:flex; align-items:center; gap:12px; }
+  .fstage .bar2 { height:40px; border-radius:8px; display:flex; align-items:center; padding:0 14px; color:#fff; font-weight:600; font-size:13px; min-width:60px; transition:width .6s cubic-bezier(.2,.8,.25,1); }
+  .fstage .meta { font-size:12.5px; color:var(--soft); }
+  .fstage .meta b { color:var(--ink); }
+
+  /* donut legend */
+  .donut-wrap { display:flex; align-items:center; gap:20px; flex-wrap:wrap; }
+  .legend { display:flex; flex-direction:column; gap:8px; }
+  .legend .li { display:flex; align-items:center; gap:9px; font-size:13px; }
+  .legend .sw { width:11px; height:11px; border-radius:3px; flex:0 0 auto; }
+  .legend .li b { font-variant-numeric:tabular-nums; }
+  .legend .li .p { color:var(--mute); font-size:11.5px; margin-left:2px; }
+
+  /* monthly columns */
+  .cols { display:flex; align-items:flex-end; gap:6px; height:180px; padding-top:10px; }
+  .col { flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; min-width:0; height:100%; justify-content:flex-end; }
+  .col .stk { width:100%; max-width:34px; display:flex; flex-direction:column-reverse; border-radius:5px 5px 0 0; overflow:hidden; }
+  .col .seg { width:100%; }
+  .col .cl { font-size:9.5px; color:var(--mute); font-family:var(--mono); white-space:nowrap; transform:rotate(-45deg); transform-origin:center; margin-top:8px; height:12px; }
+  .col .tot { font-size:9.5px; color:var(--soft); font-family:var(--mono); }
+
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); font-weight:700; padding:0 8px 8px; border-bottom:1px solid var(--hair); }
+  th.r,td.r { text-align:right; }
+  td { padding:8px; font-size:13px; border-bottom:1px solid var(--hair2); }
+  tr:last-child td { border-bottom:0; }
+  .tag { display:inline-block; font-size:11px; font-weight:600; padding:2px 8px; border-radius:20px; }
+
+  footer { max-width:1200px; margin:0 auto; padding:8px 24px 40px; color:var(--mute); font-size:11.5px; }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gate-card">
+    <div class="logo" id="gate-logo"></div>
+    <h1>Assist Utilization</h1>
+    <p>Enter the report password to view live program performance.</p>
+    <form class="gate-form" id="gate-form">
+      <input id="gate-pw" type="password" placeholder="Password" autocomplete="current-password" autofocus>
+      <button type="submit" id="gate-btn">Unlock</button>
+    </form>
+    <div class="gate-err" id="gate-err"></div>
+  </div>
+</div>
+
+<div id="app">
+  <header class="top">
+    <div class="top-in">
+      <div class="logo" id="top-logo"></div>
+      <div class="titles">
+        <div class="k">Avalon Assist</div>
+        <div class="t">Utilization &amp; Savings</div>
+      </div>
+      <div class="stamp" id="stamp"></div>
+      <button class="lock" id="lock-btn" title="Lock this report">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        Lock
+      </button>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="filters" id="filters">
+      <div class="sel"><select id="f-client"></select></div>
+      <div class="sel"><select id="f-source"></select></div>
+      <div class="sel"><select id="f-status"></select></div>
+      <div class="sel"><select id="f-month"></select></div>
+      <button class="reset" id="f-reset">Reset</button>
+      <span class="count" id="f-count"></span>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="grid">
+      <div class="panel span7">
+        <div class="kicker">Avalon savings by channel <span class="hint">· where the value is created</span></div>
+        <div class="bars" id="ch-savings"></div>
+      </div>
+      <div class="panel span5">
+        <div class="kicker">Case pipeline</div>
+        <div class="funnel" id="funnel"></div>
+      </div>
+
+      <div class="panel span7">
+        <div class="kicker">Cases per month <span class="hint">· by outcome</span></div>
+        <div class="cols" id="monthly"></div>
+        <div class="legend" id="monthly-legend" style="flex-direction:row;gap:16px;margin-top:14px;flex-wrap:wrap"></div>
+      </div>
+      <div class="panel span5">
+        <div class="kicker">Volume by channel</div>
+        <div class="donut-wrap">
+          <div id="src-donut"></div>
+          <div class="legend" id="src-legend"></div>
+        </div>
+      </div>
+
+      <div class="panel span6">
+        <div class="kicker">Top medications <span class="hint">· by case count</span></div>
+        <div class="bars" id="top-meds"></div>
+      </div>
+      <div class="panel span6">
+        <div class="kicker">Why cases close <span class="hint">· closed-without-fill reasons</span></div>
+        <div class="bars" id="close-reasons"></div>
+      </div>
+
+      <div class="panel span12">
+        <div class="kicker">Channel detail</div>
+        <div style="overflow-x:auto">
+          <table id="channel-table">
+            <thead><tr>
+              <th>Channel</th><th class="r">Cases</th><th class="r">Completed</th>
+              <th class="r">Avalon savings</th><th class="r">AWP</th><th class="r">Avalon fee</th><th class="r">Avg savings / case</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const API = "https://myrxcard-sync.trevorfallbacher.workers.dev";
+const LOGO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 182.2"><defs><style>.st0{fill:#abb9d4}.st1{fill:#315280}.st2{fill:#1c80b8}.st3{fill:#aac268}</style></defs><g><path class="st1" d="M292.9,127.8h-19.4l-6.5-17h-45.1l-6.6,17h-19.4l41.7-97.5h13.7l41.7,97.5ZM244.5,51.6l-17,44.3h34l-17-44.3Z"/><path class="st1" d="M274.3,58.3h18l18.7,49.5,18.7-49.5h18l-28.8,69.5h-15.6l-28.8-69.5Z"/><path class="st1" d="M420.2,58.3v69.5h-16.9v-12c-4,7.1-13.2,13.7-25.4,13.7-20.6,0-35.1-16.4-35.1-36.4s14.5-36.5,35.1-36.5,21.6,6.3,25.1,13.7v-12h17.1ZM381.4,115c11.6,0,21.3-8.5,21.3-21.9s-9.8-22-21.3-22-20.9,9.9-20.9,22,8.4,21.9,20.9,21.9Z"/><path class="st1" d="M428.9,127.8V26.1h17.6v101.7h-17.6Z"/><path class="st1" d="M452.2,93.2c0-19,14.2-36.5,38.2-36.5s38.2,17.6,38.2,36.5-14.2,36.4-38.2,36.4-38.2-17.6-38.2-36.4ZM469.4,93.2c0,11.3,7.5,21.7,21,21.7s21-10.4,21-21.7-7.5-21.9-21-21.9-21,10.6-21,21.9Z"/><path class="st1" d="M551.4,127.8h-17.6V58.3h17v11.8c3.2-8.1,12.3-13.5,23.1-13.5,16.7,0,26.1,12.3,26.1,29.5v41.7h-17.6v-38.7c0-9.9-4.5-17.1-14.9-17.1s-16.2,7-16.2,17v38.9Z"/></g><g><path class="st1" d="M321.2,145.2h4.9v10.9h13.1v-10.9h4.9v26.6h-4.9v-11.1h-13.1v11.1h-4.9v-26.6Z"/><path class="st1" d="M353,145.2h17.8v4.3h-12.8v6.6h12.5v4.3h-12.5v7h13v4.3h-17.9v-26.6Z"/><path class="st1" d="M402.9,171.8h-5.3l-1.8-4.6h-12.3l-1.8,4.6h-5.3l11.4-26.6h3.7l11.4,26.6ZM389.7,151l-4.6,12.1h9.3l-4.6-12.1Z"/><path class="st1" d="M409.7,145.2h4.9v22.3h12.1v4.3h-17.1v-26.6Z"/><path class="st1" d="M450.3,149.5h-8v22.3h-4.9v-22.3h-8v-4.3h21v4.3Z"/><path class="st1" d="M457.3,145.2h4.9v10.9h13.1v-10.9h4.9v26.6h-4.9v-11.1h-13.1v11.1h-4.9v-26.6Z"/><path class="st1" d="M515,153.9h-4.9c-1.4-2.9-4.1-4.9-8.2-4.9s-9.2,4.2-9.2,9.5,3.5,9.5,9.2,9.5,6.8-1.9,8.2-4.9h4.9c-1.6,5.1-6.4,9.2-13.1,9.2s-14.2-6.2-14.2-13.8,5.6-13.8,14.2-13.8,11.5,4.1,13.1,9.2Z"/><path class="st1" d="M545.8,171.8h-5.3l-1.8-4.6h-12.3l-1.8,4.6h-5.3l11.4-26.6h3.7l11.4,26.6ZM532.6,151l-4.6,12.1h9.3l-4.6-12.1Z"/><path class="st1" d="M561.6,164.1h-4.1v7.6h-4.9v-26.6h11.7c5.7,0,9.6,4.2,9.6,9.5s-2.5,7.7-6.4,9l7.6,8.1h-6.5l-7-7.6ZM563.7,159.9c3.3,0,5.4-2.3,5.4-5.2s-2.1-5.2-5.4-5.2h-6.1v10.4h6.1Z"/><path class="st1" d="M582.1,145.2h17.8v4.3h-12.8v6.6h12.5v4.3h-12.5v7h13v4.3h-17.9v-26.6Z"/></g><polygon class="st1" points="93.8 42.3 115.1 63.5 136.3 42.3 93.8 -.2 51.3 42.3 72.5 63.5 93.8 42.3"/><polygon class="st2" points="44.6 91.3 65.9 70 44.6 48.8 2.1 91.3 44.6 133.8 65.9 112.6 44.6 91.3"/><polygon class="st0" points="94.2 139.7 72.9 118.5 51.7 139.7 94.2 182.2 136.7 139.7 115.5 118.5 94.2 139.7"/><polygon class="st3" points="142.6 48.8 121.4 70 142.6 91.3 121.4 112.6 142.6 133.8 185.1 91.3 142.6 48.8"/></svg>`;
+const COL = { navy:"#315280", teal:"#1c80b8", green:"#8FA93E", blue:"#abb9d4", gold:"#E0A32E", soft:"#9db3c4" };
+const $ = (id) => document.getElementById(id);
+document.querySelectorAll(".logo").forEach(el => el.innerHTML = LOGO);
+
+let RAW = [];       // all cases
+let cfg = { pw:null };
+
+// ---- helpers ----
+const money = (n) => "$" + Math.round(n).toLocaleString("en-US");
+const moneyK = (n) => Math.abs(n)>=1e6 ? "$"+(n/1e6).toFixed(2)+"M" : Math.abs(n)>=1e3 ? "$"+Math.round(n/1e3)+"K" : "$"+Math.round(n);
+const int = (n) => Math.round(n).toLocaleString("en-US");
+const pct = (n) => (n*100).toFixed(0)+"%";
+const num = (v) => Number(v)||0;
+// normalize client spelling variants
+const clientOf = (r) => { const c=(r.client_name||"").trim(); return c==="Marpai Health"?"Marpai":(c||"—"); };
+const isOpen = (s) => s==="Open" || s.startsWith("Open") || s==="Targeted for Switch";
+const isCompleted = (s) => s==="Completed";
+const isClosed = (s) => s.startsWith("Closed");
+const monthLabel = (m) => { if(!/^\d{4}-\d{2}$/.test(m)) return m; const [y,mo]=m.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+mo-1]+" "+y.slice(2); };
+
+// ---- gate ----
+async function unlock(pw) {
+  const res = await fetch(API, { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({ report_pw:pw }) });
+  if (res.status === 403) throw new Error("bad");
+  if (!res.ok) throw new Error("HTTP "+res.status);
+  const out = await res.json();
+  cfg.pw = pw;
+  sessionStorage.setItem("avalon-pw", pw);
+  RAW = out.cases || [];
+  $("gate").style.display = "none";
+  $("app").style.display = "block";
+  $("stamp").textContent = out.generatedAt ? "UPDATED " + new Date(out.generatedAt).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}) : "";
+  buildFilters();
+  render();
+}
+$("gate-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("gate-btn"); btn.disabled = true; btn.textContent = "…"; $("gate-err").textContent = "";
+  try { await unlock($("gate-pw").value.trim()); }
+  catch (err) { $("gate-err").textContent = err.message==="bad" ? "That password didn't unlock the report." : "Couldn't load: "+err.message; btn.disabled=false; btn.textContent="Unlock"; $("gate-pw").select(); }
+});
+$("lock-btn").addEventListener("click", () => { sessionStorage.removeItem("avalon-pw"); location.reload(); });
+
+// ---- filters ----
+const F = { client:"", source:"", status:"", month:"" };
+function opts(sel, label, values, cur) {
+  sel.innerHTML = `<option value="">${label} — all</option>` + values.map(v=>`<option value="${v}"${v===cur?" selected":""}>${v}</option>`).join("");
+}
+function buildFilters() {
+  const uniq = (fn) => [...new Set(RAW.map(fn))].filter(Boolean).sort();
+  opts($("f-client"), "Client", uniq(clientOf), F.client);
+  opts($("f-source"), "Channel", uniq(r=>r.source), F.source);
+  opts($("f-status"), "Status", uniq(r=>r.status), F.status);
+  opts($("f-month"), "Month", uniq(r=>r.month), F.month);
+  for (const [k,el] of [["client","f-client"],["source","f-source"],["status","f-status"],["month","f-month"]])
+    $(el).onchange = (e) => { F[k]=e.target.value; render(); };
+  $("f-reset").onclick = () => { F.client=F.source=F.status=F.month=""; buildFilters(); render(); };
+}
+const passes = (r) => (!F.client||clientOf(r)===F.client) && (!F.source||r.source===F.source) && (!F.status||r.status===F.status) && (!F.month||r.month===F.month);
+
+// ---- render ----
+function render() {
+  const rows = RAW.filter(passes);
+  $("f-count").textContent = rows.length + " of " + RAW.length + " cases";
+
+  const savings = rows.reduce((s,r)=>s+num(r.avalon_savings),0);
+  const awp = rows.reduce((s,r)=>s+num(r.awp),0);
+  const fee = rows.reduce((s,r)=>s+num(r.avalon_fee),0);
+  const members = new Set(rows.map(r=>r.member_ref).filter(Boolean)).size;
+  const completed = rows.filter(r=>isCompleted(r.status)).length;
+  const savingsRate = awp ? savings/awp : 0;
+
+  // KPI band
+  const kpi = (v,k,s,accent) => `<div class="kpi" style="--accent:${accent}"><div class="k">${k}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`;
+  $("kpis").innerHTML =
+    kpi(moneyK(savings), "Avalon Savings", pct(savingsRate)+" of AWP", COL.green) +
+    kpi(moneyK(awp), "Total AWP", "list price avoided", COL.navy) +
+    kpi(int(rows.length), "Cases", int(members)+" unique members", COL.teal) +
+    kpi(int(completed), "Completed", pct(rows.length?completed/rows.length:0)+" of cases", COL.green) +
+    kpi(moneyK(fee), "Avalon Fee", "program revenue", COL.blue) +
+    kpi(completed?moneyK(savings/Math.max(completed,1)):"—", "Savings / Completed", "per filled case", COL.gold);
+
+  // savings by channel
+  const bySrc = agg(rows, r=>r.source, r=>num(r.avalon_savings));
+  hbars($("ch-savings"), bySrc.sort((a,b)=>b.v-a.v), moneyK, COL.green);
+
+  // funnel
+  const openN = rows.filter(r=>isOpen(r.status)).length;
+  const stages = [
+    { label:"All cases", n:rows.length, color:COL.navy },
+    { label:"In progress", n:openN, color:COL.teal },
+    { label:"Completed", n:completed, color:COL.green },
+  ];
+  const fmax = Math.max(rows.length,1);
+  $("funnel").innerHTML = stages.map(s=>`
+    <div class="fstage">
+      <div class="bar2" style="width:${Math.max(8,100*s.n/fmax)}%;background:${s.color}">${int(s.n)}</div>
+      <div class="meta"><b>${s.label}</b> · ${pct(rows.length?s.n/rows.length:0)}</div>
+    </div>`).join("") +
+    `<div class="fstage"><div class="bar2" style="width:${Math.max(8,100*rows.filter(r=>isClosed(r.status)).length/fmax)}%;background:${COL.soft}">${int(rows.filter(r=>isClosed(r.status)).length)}</div><div class="meta"><b>Closed, no fill</b> · ${pct(rows.length?rows.filter(r=>isClosed(r.status)).length/rows.length:0)}</div></div>`;
+
+  // monthly stacked (completed / open / closed)
+  renderMonthly(rows);
+
+  // source donut (volume)
+  const srcVol = agg(rows, r=>r.source, ()=>1).sort((a,b)=>b.v-a.v);
+  const palette = [COL.navy,COL.teal,COL.green,COL.blue,COL.gold,COL.soft];
+  srcVol.forEach((d,i)=>d.color=palette[i%palette.length]);
+  $("src-donut").innerHTML = donut(srcVol, 150);
+  $("src-legend").innerHTML = srcVol.map(d=>`<div class="li"><span class="sw" style="background:${d.color}"></span><span><b>${d.k}</b> ${int(d.v)}<span class="p">${pct(rows.length?d.v/rows.length:0)}</span></span></div>`).join("");
+
+  // top meds
+  const meds = agg(rows, r=>r.medication_name, ()=>1).sort((a,b)=>b.v-a.v).slice(0,8);
+  hbars($("top-meds"), meds, int, COL.teal);
+
+  // close reasons (only closed cases with a reason)
+  const cr = agg(rows.filter(r=>isClosed(r.status) && r.closed_reason), r=>r.closed_reason, ()=>1).sort((a,b)=>b.v-a.v).slice(0,7);
+  hbars($("close-reasons"), cr, int, COL.blue);
+
+  // channel table
+  const chans = {};
+  for (const r of rows) { const c=r.source||"—"; (chans[c] ||= {n:0,comp:0,sav:0,awp:0,fee:0}); const o=chans[c]; o.n++; if(isCompleted(r.status))o.comp++; o.sav+=num(r.avalon_savings); o.awp+=num(r.awp); o.fee+=num(r.avalon_fee); }
+  const trows = Object.entries(chans).sort((a,b)=>b[1].sav-a[1].sav).map(([c,o])=>
+    `<tr><td><b>${c}</b></td><td class="r num">${int(o.n)}</td><td class="r num">${int(o.comp)}</td><td class="r num">${money(o.sav)}</td><td class="r num">${money(o.awp)}</td><td class="r num">${money(o.fee)}</td><td class="r num">${o.comp?money(o.sav/o.comp):"—"}</td></tr>`).join("");
+  $("channel-table").querySelector("tbody").innerHTML = trows || `<tr><td colspan="7" style="color:var(--mute)">No cases under these filters.</td></tr>`;
+
+  $("foot").textContent = "Avalon Assist · live from CRM, de-identified · member counts use pseudonymous tokens · " + RAW.length + " cases loaded";
+}
+
+function agg(rows, keyFn, valFn) {
+  const m = new Map();
+  for (const r of rows) { const k=keyFn(r)||"—"; m.set(k,(m.get(k)||0)+valFn(r)); }
+  return [...m.entries()].map(([k,v])=>({k,v}));
+}
+function hbars(el, data, fmt, color) {
+  if (!data.length) { el.innerHTML = `<div style="color:var(--mute);font-size:13px">No data under these filters.</div>`; return; }
+  const max = Math.max(...data.map(d=>d.v),1);
+  el.innerHTML = data.map(d=>`
+    <div class="bar" title="${esc(d.k)}">
+      <span class="lbl">${esc(d.k)}</span>
+      <span class="track"><span class="fill" style="width:${Math.max(2,100*d.v/max)}%;background:${color}"></span></span>
+      <span class="val num">${fmt(d.v)}</span>
+    </div>`).join("");
+}
+function donut(segs, size) {
+  const r=size/2, ir=r*.62, cx=r, cy=r, tot=segs.reduce((a,s)=>a+s.v,0)||1;
+  let a=-Math.PI/2, p="";
+  for (const s of segs) {
+    const a2=a+(s.v/tot)*Math.PI*2, large=a2-a>Math.PI?1:0;
+    const x1=cx+r*Math.cos(a),y1=cy+r*Math.sin(a),x2=cx+r*Math.cos(a2),y2=cy+r*Math.sin(a2);
+    const xi2=cx+ir*Math.cos(a2),yi2=cy+ir*Math.sin(a2),xi1=cx+ir*Math.cos(a),yi1=cy+ir*Math.sin(a);
+    p+=`<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} A${r} ${r} 0 ${large} 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L${xi2.toFixed(1)} ${yi2.toFixed(1)} A${ir} ${ir} 0 ${large} 0 ${xi1.toFixed(1)} ${yi1.toFixed(1)} Z" fill="${s.color}"/>`;
+    a=a2;
+  }
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${p}</svg>`;
+}
+function renderMonthly(rows) {
+  const months = [...new Set(rows.map(r=>r.month))].filter(m=>/^\d{4}-\d{2}$/.test(m)).sort();
+  const data = months.map(m=>{
+    const mr = rows.filter(r=>r.month===m);
+    return { m, completed:mr.filter(r=>isCompleted(r.status)).length, open:mr.filter(r=>isOpen(r.status)).length, closed:mr.filter(r=>isClosed(r.status)).length, tot:mr.length };
+  });
+  const max = Math.max(...data.map(d=>d.tot),1);
+  $("monthly").innerHTML = data.map(d=>{
+    const h = (n)=> (100*n/max);
+    return `<div class="col" title="${monthLabel(d.m)}: ${d.tot} cases">
+      <div class="tot num">${d.tot||""}</div>
+      <div class="stk" style="height:${Math.max(2,100*d.tot/max)}%">
+        <div class="seg" style="height:${d.tot?100*d.completed/d.tot:0}%;background:${COL.green}"></div>
+        <div class="seg" style="height:${d.tot?100*d.open/d.tot:0}%;background:${COL.teal}"></div>
+        <div class="seg" style="height:${d.tot?100*d.closed/d.tot:0}%;background:${COL.soft}"></div>
+      </div>
+      <div class="cl">${monthLabel(d.m)}</div>
+    </div>`;
+  }).join("") || `<div style="color:var(--mute);font-size:13px">No data.</div>`;
+  $("monthly-legend").innerHTML = [["Completed",COL.green],["In progress",COL.teal],["Closed, no fill",COL.soft]]
+    .map(([l,c])=>`<div class="li"><span class="sw" style="background:${c}"></span>${l}</div>`).join("");
+}
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+// auto-unlock if we have a session pw
+(async () => {
+  const saved = sessionStorage.getItem("avalon-pw");
+  if (saved) { try { await unlock(saved); } catch { sessionStorage.removeItem("avalon-pw"); } }
+})();
+</script>
+</body>
+</html>

@@ -309,6 +309,16 @@
         <details class="classes"><summary>Drug classifications</summary><div class="cl-list" id="cl-list"></div></details>
       </div>
       <div class="panel span7">
+        <div class="kicker">Member spread <span class="hint">· age bands, de-identified · counts &lt;3 masked</span></div>
+        <div class="bars" id="age-bars"></div>
+        <div class="pnote" id="age-note"></div>
+      </div>
+      <div class="panel span5">
+        <div class="kicker">Longevity &amp; lifetime value <span class="hint">· SSA life table</span></div>
+        <div class="pk" id="long-kpis" style="grid-template-columns:repeat(2,1fr)"></div>
+        <div class="pnote" id="long-note"></div>
+      </div>
+      <div class="panel span7">
         <div class="kicker" id="trend-kicker">Cases per quarter <span class="hint">· by outcome</span></div>
         <div class="cols" id="trend"></div>
         <div class="legend" id="trend-legend" style="flex-direction:row;gap:16px;margin-top:14px;flex-wrap:wrap"></div>
@@ -569,6 +579,20 @@ const CLASS_META = {
   acute:{label:"Acute / episodic",color:COL.soft},
   unknown:{label:"Unclassified (treated chronic)",color:COL.blue}
 };
+// SSA 2022 period life table, sexes combined (interpolated between anchor ages):
+// qx = probability of death within the year at age x; le = expected remaining years.
+const LIFE=[[0,.005,77.5],[5,.0001,73.1],[10,.0001,68.2],[15,.0004,63.3],[20,.0008,58.5],[25,.001,53.8],[30,.0013,49.1],[35,.0016,44.4],[40,.002,39.8],[45,.003,35.2],[50,.0045,30.7],[55,.0065,26.4],[60,.0095,22.2],[65,.014,18.3],[70,.021,14.6],[75,.033,11.3],[80,.055,8.4],[85,.095,6.0],[90,.16,4.2]];
+function lifeInterp(age,idx){
+  const a=Math.max(0,Math.min(90,age));
+  for(let i=LIFE.length-1;i>=0;i--) if(a>=LIFE[i][0]){
+    const lo=LIFE[i], hi=LIFE[i+1]||lo, f=hi===lo?0:(a-lo[0])/(hi[0]-lo[0]);
+    return lo[idx]+(hi[idx]-lo[idx])*f;
+  }
+  return LIFE[0][idx];
+}
+const qx=(age)=>lifeInterp(age,1);
+const leRemain=(age)=>lifeInterp(age,2);
+const survive=(age,t)=>{ let s=1; for(let j=1;j<=t;j++) s*=1-qx(age+j); return s; };
 const normMed=(s)=>(s||"").toLowerCase().replace(/\s*\(.*?\)\s*/g," ").replace(/\s+/g," ").trim();
 function classOf(name){
   const n=normMed(name); if(!n)return "unknown";
@@ -599,10 +623,15 @@ function projStats(rows, scenKey){
   for(const r of rows){
     const k=r.member_ref+"|"+normMed(r.medication_name);
     let p=pairs.get(k);
-    if(!p){ p={cls:clsOf(r),unknown:classOf(r.medication_name)==="unknown",first:"",fills:[]}; pairs.set(k,p); }
+    if(!p){ p={cls:clsOf(r),unknown:classOf(r.medication_name)==="unknown",first:"",fills:[],age:0,ageDate:""}; pairs.set(k,p); }
     if(r.created_date&&(!p.first||r.created_date<p.first)) p.first=r.created_date;
+    const a=num(r.member_age);
+    if(a>0&&(r.created_date||"")>=p.ageDate){ p.age=a; p.ageDate=r.created_date||""; } // 0 = not yet backfilled
     if(isCompleted(r.status)) p.fills.push(r);
   }
+  const knownAges=[...pairs.values()].map(p=>p.age).filter(a=>a>0).sort((a,b)=>a-b);
+  const medianAge=knownAges.length? knownAges[Math.floor(knownAges.length/2)] : null;
+  const mAge=medianAge??52; // fallback until the age backfill runs
 
   // empirical refill cadence: gaps between completed fills of the same member+drug
   const iv=[];
@@ -645,7 +674,7 @@ function projStats(rows, scenKey){
 
   // active book: pairs whose latest completed fill is recent (within 2x median gap of last data)
   let activeN=0, imputed=0;
-  const book={chronic:0,onc:0};
+  const book={chronic:0,onc:0}, bookList=[];
   for(const [k,p] of pairs){
     if(!p.fills.length||p.cls==="acute") continue;
     const last=p.fills.reduce((m,r)=>(r.created_date>m)?r.created_date:m,"");
@@ -655,6 +684,7 @@ function projStats(rows, scenKey){
     if(!v){ const da=drugAvg.get(k.split("|")[1]); v=da?da.s/da.n:medFill; if(v)imputed++; }
     if(!v) continue;
     activeN++; book[p.cls]+=v*fillsYr;
+    bookList.push({cls:p.cls, v:v*fillsYr, age:p.age||mAge});
   }
 
   // new-start run rate (member+drug pairs first seen in trailing window before last data)
@@ -683,15 +713,27 @@ function projStats(rows, scenKey){
   const projRemainder=bookMo*monthsLeft+newPart;
   const eoySav=ytdSav+projRemainder;
 
-  // ---- five-year: decay the book, stack continuation-gated new cohorts
-  let bC=book.chronic+cohortRecurYr*(monthsLeft/12), bO=book.onc;
+  // ---- five-year: decay each book entry by drug persistence AND member survival
+  // (SSA life table), stack continuation-gated new cohorts (assumed median age)
+  const cohorts=[{v:cohortRecurYr*(monthsLeft/12), born:0}]; // partial current-year cohort
   const years=[]; let cum=eoySav;
   for(let t=1;t<=4;t++){
-    bC*=S.pers.chronic; bO*=S.pers.onc;
-    const tot=Math.max(0,bC+bO+cohortOnceYr+cohortRecurYr*0.5); // newest cohort ramps mid-year
+    let tot=cohortOnceYr+cohortRecurYr*0.5; // new starts' first fills + newest cohort ramping mid-year
+    for(const b of bookList) tot+=b.v*Math.pow(S.pers[b.cls],t)*survive(b.age,t);
+    for(const c of cohorts) tot+=c.v*Math.pow(S.pers.chronic,t-c.born)*survive(mAge,t-c.born);
+    tot=Math.max(0,tot);
     years.push({year:y+t,v:tot}); cum+=tot;
-    bC+=cohortRecurYr;
+    cohorts.push({v:cohortRecurYr, born:t});
   }
+
+  // lifetime value of the active book: run persistence x survival to exhaustion
+  let lifetimeVal=0;
+  for(const b of bookList) for(let t=0;t<=40;t++){
+    const w=Math.pow(S.pers[b.cls],t)*survive(b.age,t);
+    if(w<0.005) break;
+    lifetimeVal+=b.v*w;
+  }
+  const avgLE=knownAges.length? knownAges.reduce((s,a)=>s+leRemain(a),0)/knownAges.length : null;
 
   // ---- AWP-switch potential (per fill -> annualized by class)
   const perFillPot=(r)=>{ const a=num(r.awp); if(!a)return 0; const aa=num(r.aa_price); return aa>0?Math.max(0,a-aa):a*savRatio; };
@@ -705,7 +747,8 @@ function projStats(rows, scenKey){
   return {q,interval,fillsYr,savRatio,feeRatio,compRate,medFill,meanFill,contRate,contElig,activeN,imputed,
     bookYr:book.chronic+book.onc,startsMo,chronShare,cohortOnceYr,cohortRecurYr,
     y,monthsLeft,ytdSav,ytdFee,projRemainder,eoySav,years,cum,
-    openPot,missedPot,anchor,staleDays,actual,pairsN:pairs.size};
+    openPot,missedPot,anchor,staleDays,actual,pairsN:pairs.size,
+    medianAge,agesKnown:knownAges.length,lifetimeVal,avgLE};
 }
 
 function renderProjections(rows){
@@ -762,12 +805,42 @@ function renderProjections(rows){
     (p.openPot.unq?` ${p.openPot.unq} open cases are not yet priced.`:"")+
     ` Closed-without-fill cases represent <b>${moneyK(p.missedPot.yr)}/yr</b> walked away.`;
 
+  // member spread (unique members, latest known age) — banded, small cells masked
+  const mAgesMap=new Map();
+  for(const r of rows){ const a=num(r.member_age);
+    if(a>0&&r.member_ref){ const cur=mAgesMap.get(r.member_ref); if(!cur||(r.created_date||"")>cur.d) mAgesMap.set(r.member_ref,{a,d:r.created_date||""}); } }
+  const allMembers=new Set(rows.map(r=>r.member_ref).filter(Boolean)).size;
+  if(!mAgesMap.size){
+    $("age-bars").innerHTML=`<div style="color:var(--mute);font-size:13px">Ages not yet synced — run the updated <b>backfill_avalon_cases</b> in Zoho and this panel lights up.</div>`;
+    $("age-note").textContent="";
+  } else {
+    const BANDS=[["0–17",0,17],["18–34",18,34],["35–44",35,44],["45–54",45,54],["55–64",55,64],["65–74",65,74],["75+",75,200]];
+    const bandData=BANDS.map(([k,lo,hi])=>{ let n=0,cases=0,sav=0;
+      for(const o of mAgesMap.values()) if(o.a>=lo&&o.a<=hi) n++;
+      for(const r of rows){ const o=mAgesMap.get(r.member_ref); if(o&&o.a>=lo&&o.a<=hi){ cases++; sav+=num(r.avalon_savings); } }
+      return {k,n,cases,sav}; }).filter(b=>b.n>0);
+    const mx=Math.max(...bandData.map(b=>b.n),1);
+    $("age-bars").innerHTML=bandData.map((b,i)=>{ const lbl=b.n<3?"&lt;3":int(b.n);
+      return `<div class="bar" style="--i:${i}" title="${b.k}: ${b.n<3?"fewer than 3":int(b.n)} members · ${int(b.cases)} cases"><span class="lbl">${b.k}</span><span class="track"><span class="fill" style="width:${Math.max(2,100*b.n/mx)}%;background:${COL.navy}"></span></span><span class="val num">${lbl}<span style="color:var(--mute);font-weight:400"> · ${moneyK(b.sav)}</span></span></div>`; }).join("");
+    const sen=[...mAgesMap.values()].filter(o=>o.a>=65).length;
+    $("age-note").innerHTML=`${mAgesMap.size} of ${allMembers} members have a synced age · median <b>${p.medianAge}</b> · <b>${pct(sen/mAgesMap.size)}</b> are 65+ (Medicare-shift risk). Member counts under 3 are masked; only whole-year ages (capped at 90) ever leave the CRM — no DOB, no identifiers.`;
+  }
+  // longevity + lifetime value
+  const lcell=(k,v,s)=>`<div class="cell"><div class="k">${k}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`;
+  $("long-kpis").innerHTML=
+    lcell("Avg remaining life expectancy",p.avgLE?p.avgLE.toFixed(1)+" yrs":"—",p.agesKnown?p.agesKnown+" member-drug pairs aged":"pending age backfill")+
+    lcell("Lifetime value · active book",p.activeN?moneyK(p.lifetimeVal):"—","persistence × survival to exhaustion");
+  $("long-note").innerHTML=p.agesKnown
+    ? "Each active book entry decays by drug persistence <i>and</i> annual survival at the member's age (SSA 2022 period life table, sexes combined). Younger chronic members compound savings for decades — age is why two books with the same run-rate can differ several-fold in lifetime value."
+    : "Using a median-age-52 placeholder until ages sync; the 5-year and lifetime figures refine automatically once the backfill runs.";
+
   // methodology, with the live parameters
   $("meth").innerHTML=[
     `<b>Refill cadence</b> measured from ${p.q.n} observed refill gaps: median <b class="num">${Math.round(p.q.med)}d</b> → <b class="num">${p.fillsYr.toFixed(1)} fills/yr</b> (scenario uses ${Math.round(p.interval)}d).`,
     `<b>Chronic vs acute</b>: therapeutic lookup below. Chronic fills recur; acute counted once. Unclassified drugs treated as chronic.`,
     `<b>Active book</b>: member+drug pairs with a completed fill within 2× the median gap of last data — ${p.activeN} pairs, ${moneyK(p.bookYr)}/yr.${p.imputed?` ${p.imputed} unpriced pairs imputed from drug averages.`:""}`,
     `<b>Persistence</b>: book decays ${pct(1-SCEN[PSCEN].pers.chronic)}/yr (maintenance) and ${pct(1-SCEN[PSCEN].pers.onc)}/yr (limited-course), in line with published specialty adherence rates.`,
+    `<b>Mortality</b>: each projected year also multiplies by survival at the member's age (SSA 2022 life table${p.agesKnown?`, ${p.agesKnown} pairs aged, median ${p.medianAge}`:` — ages pending backfill, median 52 assumed`}).`,
     `<b>New business</b>: ${p.startsMo?`${p.startsMo.toFixed(1)} new member-drug starts/mo (trailing ${SCEN[PSCEN].startWin}mo) × ${pct(p.compRate)} completion × ${moneyK(p.meanFill)} avg fill; only ${pct(p.contRate)} keep refilling (observed continuation, n=${p.contElig})`:"none assumed (conservative)"}.`,
     `<b>AA economics</b>: savings observed at ${pct(p.savRatio)} of AWP across ${rows.filter(r=>isCompleted(r.status)&&num(r.avalon_savings)>0).length} priced completions; fee ${pct(p.feeRatio)} of savings.`
   ].map(s=>`<li>${s}</li>`).join("");
@@ -839,7 +912,7 @@ $("cal-pop").addEventListener("click",(e)=>{
 document.addEventListener("click",(e)=>{ if(!e.target.closest("#cal-pop,#cal-btn")) $("cal-pop").hidden=true; });
 
 // ---- exports ----
-const CSV_COLS=[["assist_number","Assist #"],["client_name","Client"],["tpa","TPA"],["group_number","Group"],["source","Channel"],["status","Status"],["closed_reason","Closed Reason"],["medication_name","Medication"],["medication_type","Type"],["ndc","NDC"],["created_date","Created"],["closed_date","Closed"],["awp","AWP"],["avalon_fee","Avalon Fee"],["aa_price","AA Price"],["aa_savings","AA Savings"],["avalon_savings","Avalon Savings"],["myrxcard_pricing","MyRxCard"],["medsdirect_pricing","MedsDirect"],["canada_pricing","Canada"],["member_ref","Member Token"]];
+const CSV_COLS=[["assist_number","Assist #"],["client_name","Client"],["tpa","TPA"],["group_number","Group"],["source","Channel"],["status","Status"],["closed_reason","Closed Reason"],["medication_name","Medication"],["medication_type","Type"],["ndc","NDC"],["created_date","Created"],["closed_date","Closed"],["awp","AWP"],["avalon_fee","Avalon Fee"],["aa_price","AA Price"],["aa_savings","AA Savings"],["avalon_savings","Avalon Savings"],["myrxcard_pricing","MyRxCard"],["medsdirect_pricing","MedsDirect"],["canada_pricing","Canada"],["member_age","Member Age"],["member_ref","Member Token"]];
 $("csv-btn").addEventListener("click",()=>{
   const rows=RAW.filter(passes);
   const q=(s)=>{ s=(s==null?"":String(s)); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };

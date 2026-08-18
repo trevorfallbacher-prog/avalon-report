@@ -204,7 +204,19 @@
   .pnote { margin-top:12px; font-size:12px; color:var(--soft); }
   /* stop-loss claimant bars */
   .slbars { display:flex; flex-direction:column; gap:10px; }
-  .slbar { display:grid; grid-template-columns:120px 1fr 200px; align-items:center; gap:12px; }
+  .slbar { display:grid; grid-template-columns:120px 1fr 265px; align-items:center; gap:12px; }
+  .sl-controls { display:flex; gap:8px; align-items:center; margin-left:auto; flex-wrap:wrap; }
+  .sl-controls input[type=range] { width:170px; accent-color:var(--teal); }
+  .sl-controls input[type=number] { width:96px; padding:5px 8px; border:1px solid var(--hair); border-radius:8px; font-family:var(--mono); font-size:12px; background:var(--card); color:var(--ink); }
+  .sl-controls .iconbtn.on { border-color:var(--teal); color:var(--teal); font-weight:700; }
+  .slbar .laserline { position:absolute; top:-3px; bottom:-3px; width:2.5px; background:#7A4A9E; z-index:3; border-radius:1px; }
+  .slbadge.laser { background:#EEE4F6; color:#7A4A9E; }
+  html.dark .slbadge.laser { background:#2C1F3A; }
+  .laser-btn { border:1px solid var(--hair); background:none; color:var(--mute); border-radius:5px; font-size:10px; letter-spacing:.04em; padding:1px 6px; margin-left:6px; cursor:pointer; font-family:var(--mono); }
+  .laser-btn:hover, .laser-btn.on { color:#7A4A9E; border-color:#7A4A9E; }
+  .laser-in { width:88px; padding:2px 6px; border:1px solid #7A4A9E; border-radius:6px; font-family:var(--mono); font-size:11px; background:var(--card); color:var(--ink); }
+  .lbtn { border:1px solid var(--hair); background:var(--card); color:var(--soft); border-radius:5px; font-size:11px; padding:1px 7px; cursor:pointer; }
+  .lbtn:hover { border-color:var(--teal); color:var(--teal); }
   .slbar .lbl { font-family:var(--mono); font-size:11px; color:var(--soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .slbar .track { position:relative; height:22px; background:var(--hair2); border-radius:6px; }
   .slbar .seg { position:absolute; top:0; bottom:0; }
@@ -347,15 +359,17 @@
         <div class="pnote" id="long-note"></div>
       </div>
       <div class="panel span12">
-        <div class="kicker" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Stop-loss exposure <span class="hint">· annualized specialty-Rx cost per member vs specific deductible</span>
-          <span class="scen" id="sl-ded"></span>
+        <div class="kicker" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Stop-loss exposure <span class="hint">· annualized specialty-Rx cost per member vs specific deductible · ◎ = laser a member</span>
+          <span class="sl-controls" id="sl-controls"></span>
         </div>
         <div class="pk" id="sl-kpis"></div>
         <div class="slbars" id="sl-bars"></div>
         <div class="pnote" id="sl-note"></div>
       </div>
       <div class="panel span12">
-        <div class="kicker">Aggregate accumulation <span class="hint">· cumulative cost vs 125% corridor, specialty-Rx slice</span></div>
+        <div class="kicker" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Aggregate accumulation <span class="hint">· cumulative cost vs attachment corridor, specialty-Rx slice</span>
+          <span class="scen" id="agg-pct"></span>
+        </div>
         <div class="linechart" id="corridor"></div>
         <div class="legend" id="corridor-legend" style="flex-direction:row;gap:16px;margin-top:12px;flex-wrap:wrap"></div>
         <div class="pnote" id="corridor-note"></div>
@@ -1023,11 +1037,33 @@ function lineChart(cfg){
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${out}</svg>`;
 }
 
-// ---- stop-loss exposure: annualized per-member cost vs specific deductible ----
+// ---- stop-loss exposure: deductible slider/input + per-member laser simulator ----
 let SL_DED=+localStorage.getItem("avalon-ded")||100000;
 const DED_OPTS=[50000,100000,150000,200000];
-function renderStopLoss(rows,p){
-  $("sl-ded").innerHTML=DED_OPTS.map(d=>`<button type="button" data-ded="${d}" class="${d===SL_DED?"on":""}">$${d/1000}K</button>`).join("");
+let LASERS={}; try{ LASERS=JSON.parse(localStorage.getItem("avalon-lasers")||"{}")||{}; }catch{}
+let SL_EDIT=null, SL_CTX=null;
+const saveDed=()=>localStorage.setItem("avalon-ded",SL_DED);
+const saveLasers=()=>localStorage.setItem("avalon-lasers",JSON.stringify(LASERS));
+function syncDedInputs(){
+  $("ded-slider").value=Math.min(500000,SL_DED); $("ded-num").value=SL_DED;
+  $("sl-controls").querySelectorAll("[data-ded]").forEach(b=>b.classList.toggle("on",+b.dataset.ded===SL_DED));
+}
+function ensureSLControls(){
+  const c=$("sl-controls");
+  if(!c.dataset.built){
+    c.innerHTML=`<input type="range" id="ded-slider" min="25000" max="500000" step="5000" title="Specific deductible">`+
+      `<input type="number" id="ded-num" step="5000" min="5000" title="Specific deductible ($)">`+
+      DED_OPTS.map(d=>`<button type="button" class="iconbtn" data-ded="${d}">$${d/1000}K</button>`).join("");
+    c.dataset.built="1";
+    c.addEventListener("input",(e)=>{ if(e.target.id==="ded-slider"){ SL_DED=+e.target.value; $("ded-num").value=SL_DED; saveDed(); renderSLBody(); } });
+    c.addEventListener("change",(e)=>{ if(e.target.id==="ded-num"){ SL_DED=Math.max(5000,Math.round((+e.target.value||100000)/1000)*1000); syncDedInputs(); saveDed(); renderSLBody(); } });
+    c.addEventListener("click",(e)=>{ const b=e.target.closest("[data-ded]"); if(!b)return; SL_DED=+b.dataset.ded; syncDedInputs(); saveDed(); renderSLBody(); });
+  }
+  syncDedInputs();
+}
+function renderStopLoss(rows,p){ SL_CTX={rows,p}; ensureSLControls(); renderSLBody(); }
+function renderSLBody(){
+  const {rows,p}=SL_CTX;
   const mem=new Map();
   for(const r of rows){
     if(!r.member_ref||!(num(r.awp)>0)) continue;
@@ -1045,40 +1081,67 @@ function renderStopLoss(rows,p){
   }
   list.sort((a,b)=>b.awpYr-a.awpYr);
   const ded=SL_DED;
-  const overAwp=list.filter(m=>m.awpYr>=ded), overAa=list.filter(m=>m.aaYr>=ded);
-  const halfAa=list.filter(m=>m.aaYr>=ded/2&&m.aaYr<ded);
+  const effDed=(m)=>LASERS[m.t]||ded; // laser overrides the specific for that member
+  const overAwp=list.filter(m=>m.awpYr>=effDed(m)), overAa=list.filter(m=>m.aaYr>=effDed(m));
+  const halfAa=list.filter(m=>m.aaYr>=effDed(m)/2&&m.aaYr<effDed(m));
+  // laser liability: risk the plan retains between the specific and each laser
+  let liabAwp=0, liabAa=0, laserN=0;
+  for(const m of list){ const L=LASERS[m.t]; if(!L||L<=ded) continue; laserN++;
+    liabAwp+=Math.max(0,Math.min(m.awpYr,L)-ded); liabAa+=Math.max(0,Math.min(m.aaYr,L)-ded); }
   const cell=(k,v,s)=>`<div class="cell"><div class="k">${k}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`;
   $("sl-kpis").innerHTML=
-    cell("Would breach at AWP",int(overAwp.length),"members over the specific")+
+    cell("Would breach at AWP",int(overAwp.length),"members over their specific")+
     cell("Breach at AA price",int(overAa.length),"after Avalon sourcing")+
     cell("Breaches avoided",int(overAwp.length-overAa.length),"stop-loss claims prevented")+
-    cell("In the 50% zone",int(halfAa.length),"at AA · watch list");
+    (laserN? cell("Laser liability",moneyK(liabAa),laserN+" lasered · "+moneyK(liabAwp)+" at AWP")
+           : cell("In the 50% zone",int(halfAa.length),"at AA · watch list"));
   const shown=list.slice(0,14);
-  const scale=Math.max(ded*1.3,...shown.map(m=>m.awpYr),1);
+  const scale=Math.max(ded*1.3,...shown.map(m=>Math.max(m.awpYr,LASERS[m.t]||0)),1)*1.02;
   const px=(v)=>Math.min(100,100*v/scale);
   $("sl-bars").innerHTML=shown.map((m,i)=>{
-    const badge=m.aaYr>=ded?'<span class="slbadge bad">over at AA</span>'
-      :m.awpYr>=ded?'<span class="slbadge good">breach avoided</span>'
-      :m.aaYr>=ded/2?'<span class="slbadge warn">50% zone</span>':"";
-    return `<div class="slbar" style="--i:${i}" title="At AWP ${moneyK(m.awpYr)}/yr · at AA ${moneyK(m.aaYr)}/yr">
+    const L=LASERS[m.t], eff=effDed(m);
+    const badge=(L?`<span class="slbadge laser">laser $${Math.round(L/1000)}K</span>`:"")+
+      (m.aaYr>=eff?'<span class="slbadge bad">over at AA</span>'
+      :m.awpYr>=eff?'<span class="slbadge good">breach avoided</span>'
+      :m.aaYr>=eff/2?'<span class="slbadge warn">50% zone</span>':"");
+    const ctl=SL_EDIT===m.t
+      ? `<input type="number" class="laser-in" data-lin="${esc(m.t)}" step="5000" min="0" value="${L||Math.max(ded*2,Math.ceil(m.awpYr/5000)*5000)}"> <button type="button" class="lbtn" data-lsave="${esc(m.t)}">✓</button> <button type="button" class="lbtn" data-lcancel="1">✕</button>${L?` <button type="button" class="lbtn" data-lclear="${esc(m.t)}">clear</button>`:""}`
+      : badge+`<button type="button" class="laser-btn${L?" on":""}" data-ledit="${esc(m.t)}" title="${L?"Edit laser":"Laser this member"}">◎</button>`;
+    return `<div class="slbar" style="--i:${i}" title="At AWP ${moneyK(m.awpYr)}/yr · at AA ${moneyK(m.aaYr)}/yr${L?" · lasered at $"+Math.round(L/1000)+"K":""}">
       <span class="lbl">${esc(m.t)}</span>
       <span class="track">
         <span class="seg sav" style="left:0;width:${px(m.awpYr)}%"></span>
         <span class="seg aa" style="left:0;width:${px(m.aaYr)}%"></span>
-        <span class="halfline" style="left:${px(ded/2)}%"></span>
+        <span class="halfline" style="left:${px(eff/2)}%"></span>
         <span class="dedline" style="left:${px(ded)}%"></span>
+        ${L?`<span class="laserline" style="left:${px(L)}%"></span>`:""}
       </span>
-      <span class="val num"><b>${moneyK(m.aaYr)}</b> / ${moneyK(m.awpYr)}${badge}</span>
+      <span class="val num"><b>${moneyK(m.aaYr)}</b> / ${moneyK(m.awpYr)} ${ctl}</span>
     </div>`; }).join("") || `<div style="color:var(--mute);font-size:13px">No priced members under these filters.</div>`;
-  $("sl-note").innerHTML=`Navy = annualized cost at AA price; green = additional exposure at AWP list; red line = $${ded/1000}K specific deductible, dashed = the 50% watch threshold carriers report on. Covers the Assist specialty-Rx slice only — plan medical claims are additive.`+(list.length>14?` Showing top 14 of ${list.length} members by AWP exposure.`:"");
+  $("sl-note").innerHTML=`Navy = annualized cost at AA price; green = additional exposure at AWP list; red line = $${Math.round(ded/1000)}K specific deductible, dashed = the 50% watch threshold, purple = member-specific laser. Laser liability = risk retained between the specific and each laser. Covers the Assist specialty-Rx slice only — plan medical claims are additive.`+(list.length>14?` Showing top 14 of ${list.length} members by AWP exposure.`:"");
 }
-$("sl-ded").addEventListener("click",(e)=>{
-  const b=e.target.closest("[data-ded]"); if(!b) return;
-  SL_DED=+b.dataset.ded; localStorage.setItem("avalon-ded",SL_DED); render();
+$("sl-bars").addEventListener("click",(e)=>{
+  const ed=e.target.closest("[data-ledit]"); if(ed){ SL_EDIT=ed.dataset.ledit; renderSLBody(); return; }
+  const sv=e.target.closest("[data-lsave]");
+  if(sv){ const t=sv.dataset.lsave, v=+($("sl-bars").querySelector(".laser-in")||{}).value||0;
+    if(v>0) LASERS[t]=Math.round(v/1000)*1000; else delete LASERS[t];
+    saveLasers(); SL_EDIT=null; renderSLBody(); return; }
+  const cl=e.target.closest("[data-lclear]"); if(cl){ delete LASERS[cl.dataset.lclear]; saveLasers(); SL_EDIT=null; renderSLBody(); return; }
+  if(e.target.closest("[data-lcancel]")){ SL_EDIT=null; renderSLBody(); }
+});
+$("sl-bars").addEventListener("keydown",(e)=>{
+  if(e.key==="Enter"&&e.target.classList.contains("laser-in")){
+    const t=e.target.dataset.lin, v=+e.target.value||0;
+    if(v>0) LASERS[t]=Math.round(v/1000)*1000; else delete LASERS[t];
+    saveLasers(); SL_EDIT=null; renderSLBody();
+  }
+  if(e.key==="Escape"&&e.target.classList.contains("laser-in")){ SL_EDIT=null; renderSLBody(); }
 });
 
-// ---- aggregate accumulation corridor (125% attachment, anchored on with-Avalon run-rate) ----
+// ---- aggregate accumulation corridor (attachment % simulator, anchored on with-Avalon run-rate) ----
+let AGG_PCT=+localStorage.getItem("avalon-agg")||125;
 function renderCorridor(rows){
+  $("agg-pct").innerHTML=[110,125,150].map(v=>`<button type="button" data-agg="${v}" class="${v===AGG_PCT?"on":""}">${v}%</button>`).join("");
   const comp=rows.filter(r=>isCompleted(r.status)&&num(r.awp)>0);
   const ms=[...new Set(comp.map(r=>(r.created_date||"").slice(0,7)))].filter(m=>/^\d{4}-\d{2}$/.test(m)).sort();
   if(ms.length<3){ $("corridor").innerHTML=`<div style="color:var(--mute);font-size:13px">Not enough priced months under these filters.</div>`; $("corridor-legend").innerHTML=""; $("corridor-note").textContent=""; return; }
@@ -1090,7 +1153,7 @@ function renderCorridor(rows){
   let ca=0,cn=0; const A=[],N=[];
   for(const m of ms){ ca+=mA.get(m)||0; cn+=mN.get(m)||0; A.push(ca); N.push(cn); }
   const avgNet=cn/ms.length;
-  const E=ms.map((_,i)=>avgNet*(i+1)), T=E.map(v=>v*1.25);
+  const E=ms.map((_,i)=>avgNet*(i+1)), T=E.map(v=>v*(AGG_PCT/100));
   $("corridor").innerHTML=lineChart({
     xlabels:ms.map(monthLabel), yfmt:moneyK,
     band:{lo:E,hi:T,fill:"rgba(224,163,46,.13)",from:0},
@@ -1100,11 +1163,15 @@ function renderCorridor(rows){
       {pts:A,stroke:COL.navy,width:2.5,dots:1},
       {pts:N,stroke:COL.green,width:2.5,dots:1}
     ]});
-  $("corridor-legend").innerHTML=[["Cumulative at AWP (without program)",COL.navy],["Cumulative at AA (actual)",COL.green],["Expected (run-rate)",COL.gold],["125% attachment","#C2603E"]]
+  $("corridor-legend").innerHTML=[["Cumulative at AWP (without program)",COL.navy],["Cumulative at AA (actual)",COL.green],["Expected (run-rate)",COL.gold],[AGG_PCT+"% attachment","#C2603E"]]
     .map(([l,c])=>`<div class="li"><span class="sw" style="background:${c}"></span>${l}</div>`).join("");
   const pi=A.findIndex((v,i)=>v>T[i]);
-  $("corridor-note").innerHTML=`Corridor anchored on the with-Avalon run-rate (what a carrier would price knowing the program). At AWP list the cumulative line ${pi>=0?`pierces the 125% attachment in <b>${monthLabel(ms[pi])}</b>`:"stays inside the corridor"}; actual spend closed <b>${moneyK(ca-cn)}</b> under the AWP path. Specialty-Rx slice only.`;
+  $("corridor-note").innerHTML=`Corridor anchored on the with-Avalon run-rate (what a carrier would price knowing the program). At AWP list the cumulative line ${pi>=0?`pierces the ${AGG_PCT}% attachment in <b>${monthLabel(ms[pi])}</b>`:"stays inside the corridor"}; actual spend closed <b>${moneyK(ca-cn)}</b> under the AWP path. Specialty-Rx slice only.`;
 }
+$("agg-pct").addEventListener("click",(e)=>{
+  const b=e.target.closest("[data-agg]"); if(!b) return;
+  AGG_PCT=+b.dataset.agg; localStorage.setItem("avalon-agg",AGG_PCT); render();
+});
 
 $("scen").addEventListener("click",(e)=>{
   const b=e.target.closest("[data-scen]"); if(!b)return;

@@ -181,6 +181,26 @@
   .cal-foot button { font-family:var(--mono); font-size:11px; border-radius:7px; padding:6px 10px; cursor:pointer; border:1px solid var(--hair); background:var(--card); color:var(--soft); }
   .cal-foot .apply { background:var(--navy); color:#fff; border-color:var(--navy); }
 
+  /* projections */
+  .scen { display:flex; gap:6px; margin-left:auto; }
+  .scen button { background:var(--card); border:1px solid var(--hair); border-radius:7px; color:var(--soft); padding:5px 10px; font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; }
+  .scen button:hover { color:var(--teal); border-color:var(--teal); }
+  .scen button.on { border-color:var(--teal); color:var(--teal); border-width:2px; padding:4px 9px; font-weight:700; }
+  .pk { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px; }
+  @media(max-width:900px){ .pk{ grid-template-columns:repeat(2,1fr);} }
+  .pk .cell { border:1px solid var(--hair); border-radius:10px; padding:10px 12px; background:var(--hair2); }
+  .pk .k { font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); font-weight:600; }
+  .pk .v { font-size:21px; font-weight:700; color:var(--navy); margin-top:3px; letter-spacing:-.01em; }
+  .pk .s { font-size:11px; color:var(--soft); margin-top:2px; }
+  .pnote { margin-top:12px; font-size:12px; color:var(--soft); }
+  .meth { margin:0; padding-left:18px; font-size:12.5px; color:var(--soft); display:flex; flex-direction:column; gap:7px; }
+  .meth b { color:var(--ink); }
+  .stale { margin-top:10px; font-size:12px; color:var(--warn); font-weight:600; }
+  details.classes { margin-top:12px; font-size:12px; color:var(--soft); }
+  details.classes summary { cursor:pointer; color:var(--teal); font-weight:600; }
+  details.classes .cl-list { margin-top:8px; max-height:190px; overflow-y:auto; }
+  .cl-tag { display:inline-block; border:1px solid var(--hair); border-radius:5px; padding:1px 7px; margin:0 5px 6px 0; font-size:11px; font-family:var(--mono); }
+
   /* animations */
   @keyframes panelIn { from { opacity:0; transform:translateY(16px) scale(.985); } }
   @keyframes fadeSlide { from { opacity:0; transform:translateX(-12px); } }
@@ -262,6 +282,31 @@
       <div class="panel span5">
         <div class="kicker">Case pipeline</div>
         <div class="funnel" id="funnel"></div>
+      </div>
+      <div class="panel span12">
+        <div class="kicker" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Savings projections <span class="hint">· chronic-aware outlook, end-of-year &amp; 5-year</span>
+          <span class="scen" id="scen"></span>
+        </div>
+        <div class="pk" id="proj-kpis"></div>
+        <div class="cols" id="proj-cols" style="height:200px"></div>
+        <div class="legend" id="proj-legend" style="flex-direction:row;gap:16px;margin-top:14px;flex-wrap:wrap"></div>
+        <div class="pnote" id="proj-fee"></div>
+      </div>
+      <div class="panel span4">
+        <div class="kicker">Chronic vs acute mix <span class="hint">· what recurs</span></div>
+        <div class="donut-wrap"><div id="mix-donut"></div><div class="legend" id="mix-legend"></div></div>
+        <div class="pnote">Only chronic therapies compound: each completed switch keeps refilling. Acute courses are counted once.</div>
+      </div>
+      <div class="panel span4">
+        <div class="kicker">AWP-switch potential <span class="hint">· annualized</span></div>
+        <div class="bars" id="awp-switch"></div>
+        <div class="pnote" id="awp-note"></div>
+      </div>
+      <div class="panel span4">
+        <div class="kicker">How this is computed</div>
+        <ul class="meth" id="meth"></ul>
+        <div class="stale" id="meth-stale"></div>
+        <details class="classes"><summary>Drug classifications</summary><div class="cl-list" id="cl-list"></div></details>
       </div>
       <div class="panel span7">
         <div class="kicker" id="trend-kicker">Cases per quarter <span class="hint">· by outcome</span></div>
@@ -461,6 +506,7 @@ function render(){
   $("funnel").innerHTML = stage(rows.length,"All cases",COL.navy)+stage(openN,"In progress",COL.teal)+stage(completed,"Completed",COL.green)+stage(closedN,"Closed, no fill",COL.soft);
 
   renderTrend(rows);
+  renderProjections(rows);
 
   const srcVol=agg(rows,r=>r.source,()=>1).sort((a,b)=>b.v-a.v);
   const pal=[COL.navy,COL.teal,COL.green,COL.blue,COL.gold,COL.soft];
@@ -508,6 +554,234 @@ function renderTrend(rows){
       </div><div class="cl">${periodLabel(d.k)}</div></div>`).join("") || `<div style="color:var(--mute);font-size:13px">No data.</div>`;
   $("trend-legend").innerHTML=[["Completed",COL.green],["In progress",COL.teal],["Closed, no fill",COL.soft]].map(([l,c])=>`<div class="li"><span class="sw" style="background:${c}"></span>${l}</div>`).join("");
 }
+
+// ---- projections ----
+// Therapeutic classification by normalized drug name. Chronic maintenance therapies
+// refill indefinitely; oncology/limited-course persist ~1-2 yrs; acute courses don't recur.
+const DRUG_CLASS = {
+  chronic: ["mounjaro","monjauro","trulicity","ozempic","rybelsus","dupixent","rinvoq","skyrizi","otezla","humira","tremfya","enbrel","taltz","bimzelx","kesimpta","cosentyx","kevzara","cimzia","stelara","entyvio","inflectra","remicade","orencia","xeljanz","litfulo","avonex","descovy","biktarvy","odefsey","truvada","genvoya","triumeq","apertude","apretude","emtricitabine","vemlidy","camzyos","ambrisentan","ingrezza","xywav","vraylar","lurasidone","nucala","tezspire","sildenafil","cyclosporine","sirolimus","mycophenolate","dexlansoprazole","droxidopa","orfadin","strensiq","trikafta","norditropin","sogroya","skytrofa","tymlos","rezdiffra","prialt","nemluvio","opzelura"],
+  onc: ["lazcluze","calquence","braftovi","mektovi","capecitabine","lenalidomide","gleostine","axitinib","nivestym"],
+  acute: ["ovidrel","menopur","ganirelix","nurtec","ubrevly","ubrelvy","orthovisc"]
+};
+const CLASS_META = {
+  chronic:{label:"Chronic · maintenance",color:COL.green},
+  onc:{label:"Chronic · limited course",color:COL.gold},
+  acute:{label:"Acute / episodic",color:COL.soft},
+  unknown:{label:"Unclassified (treated chronic)",color:COL.blue}
+};
+const normMed=(s)=>(s||"").toLowerCase().replace(/\s*\(.*?\)\s*/g," ").replace(/\s+/g," ").trim();
+function classOf(name){
+  const n=normMed(name); if(!n)return "unknown";
+  for(const cls of ["acute","onc","chronic"]) for(const stem of DRUG_CLASS[cls]) if(n.startsWith(stem)) return cls;
+  return "unknown";
+}
+// Scenario knobs. interval() picks the assumed refill cadence from the observed
+// interval quantiles; pers = annual persistence (retention) by class; startWin =
+// trailing months used to estimate the new-start run rate (0 = no new business).
+const SCEN = {
+  cons:{label:"Conservative", interval:(q)=>q.p75, pers:{chronic:.70,onc:.35}, startWin:0},
+  base:{label:"Base",         interval:(q)=>q.med, pers:{chronic:.80,onc:.50}, startWin:6},
+  opt: {label:"Optimistic",   interval:(q)=>Math.min(q.med,90), pers:{chronic:.88,onc:.60}, startWin:12}
+};
+let PSCEN = localStorage.getItem("avalon-scen")||"base";
+if(!SCEN[PSCEN]) PSCEN="base";
+
+function projStats(rows, scenKey){
+  const S=SCEN[scenKey];
+  const today=new Date();
+  const anchor = RAW.reduce((m,r)=>(r.created_date&&r.created_date>m)?r.created_date:m,"") || ymd(today);
+  const anchorD=new Date(anchor);
+  const staleDays=Math.max(0,Math.round((today-anchorD)/86400000));
+  const clsOf=(r)=>{const c=classOf(r.medication_name); return c==="unknown"?"chronic":c;};
+
+  // one "book entry" per member+drug pair
+  const pairs=new Map();
+  for(const r of rows){
+    const k=r.member_ref+"|"+normMed(r.medication_name);
+    let p=pairs.get(k);
+    if(!p){ p={cls:clsOf(r),unknown:classOf(r.medication_name)==="unknown",first:"",fills:[]}; pairs.set(k,p); }
+    if(r.created_date&&(!p.first||r.created_date<p.first)) p.first=r.created_date;
+    if(isCompleted(r.status)) p.fills.push(r);
+  }
+
+  // empirical refill cadence: gaps between completed fills of the same member+drug
+  const iv=[];
+  for(const p of pairs.values()){
+    const f=p.fills.filter(r=>r.created_date).sort((a,b)=>a.created_date<b.created_date?-1:1);
+    for(let i=1;i<f.length;i++){ const d=(new Date(f[i].created_date)-new Date(f[i-1].created_date))/86400000; if(d>=20&&d<=250) iv.push(d); }
+  }
+  iv.sort((a,b)=>a-b);
+  const qt=(p)=>iv.length?iv[Math.floor(p*(iv.length-1))]:0;
+  const q={n:iv.length, med:qt(.5)||110, p75:qt(.75)||140};
+  const interval=Math.max(30,S.interval(q));
+  const fillsYr=365/interval;
+
+  // observed economics
+  const priced=rows.filter(r=>isCompleted(r.status)&&num(r.avalon_savings)>0&&num(r.awp)>0);
+  const savRatio=priced.length? priced.reduce((s,r)=>s+num(r.avalon_savings),0)/priced.reduce((s,r)=>s+num(r.awp),0) : .6;
+  const compRows=rows.filter(r=>isCompleted(r.status));
+  const compSav=compRows.reduce((s,r)=>s+num(r.avalon_savings),0);
+  const feeRatio=compSav? compRows.reduce((s,r)=>s+num(r.avalon_fee),0)/compSav : .2;
+  const resolved=compRows.length+rows.filter(r=>isClosed(r.status)).length;
+  const compRate=resolved? compRows.length/resolved : .4;
+
+  // per-fill value: pair's own priced fills, else drug average, else program median.
+  // meanFill (incl. $0 completions) = honest expected value of one completed fill.
+  const drugAvg=new Map();
+  for(const r of priced){ const k=normMed(r.medication_name); const o=drugAvg.get(k)||{s:0,n:0}; o.s+=num(r.avalon_savings); o.n++; drugAvg.set(k,o); }
+  const fillVals=priced.map(r=>num(r.avalon_savings)).sort((a,b)=>a-b);
+  const medFill=fillVals.length?fillVals[Math.floor(fillVals.length/2)]:0;
+  const meanFill=compRows.length? compSav/compRows.length : 0;
+  // refill continuation: of pairs old enough to have refilled, how many actually did
+  let contElig=0, contYes=0;
+  for(const p of pairs.values()){
+    const f=p.fills.filter(r=>r.created_date);
+    if(!f.length||p.cls==="acute") continue;
+    const firstFill=f.reduce((m,r)=>(!m||r.created_date<m)?r.created_date:m,"");
+    if((anchorD-new Date(firstFill))/86400000 < q.p75) continue;
+    contElig++; if(f.length>1) contYes++;
+  }
+  const contRate=contElig? contYes/contElig : .5;
+
+  // active book: pairs whose latest completed fill is recent (within 2x median gap of last data)
+  let activeN=0, imputed=0;
+  const book={chronic:0,onc:0};
+  for(const [k,p] of pairs){
+    if(!p.fills.length||p.cls==="acute") continue;
+    const last=p.fills.reduce((m,r)=>(r.created_date>m)?r.created_date:m,"");
+    if(!last||(anchorD-new Date(last))/86400000 > 2*q.med) continue;
+    let vals=p.fills.map(r=>num(r.avalon_savings)).filter(v=>v>0);
+    let v=vals.length? vals.reduce((a,b)=>a+b)/vals.length : 0;
+    if(!v){ const da=drugAvg.get(k.split("|")[1]); v=da?da.s/da.n:medFill; if(v)imputed++; }
+    if(!v) continue;
+    activeN++; book[p.cls]+=v*fillsYr;
+  }
+
+  // new-start run rate (member+drug pairs first seen in trailing window before last data)
+  let startsMo=0;
+  if(S.startWin>0){
+    const from=new Date(anchorD); from.setMonth(from.getMonth()-S.startWin);
+    startsMo=[...pairs.values()].filter(p=>p.first&&new Date(p.first)>=from).length/S.startWin;
+  }
+  const chronShare=pairs.size? [...pairs.values()].filter(p=>p.cls!=="acute").length/pairs.size : 1;
+  // a year's new starts: one-time first fills, plus a recurring stream from the
+  // share that actually keeps refilling (continuation-gated)
+  const startsYr=startsMo*12;
+  const cohortOnceYr=startsYr*compRate*meanFill;
+  const cohortRecurYr=startsYr*compRate*contRate*meanFill*fillsYr*chronShare;
+
+  // ---- end-of-year: actual YTD + book run-rate + ramping new cohorts
+  const y=today.getFullYear();
+  const monthsLeft=Math.max(0,(new Date(y,11,31)-today)/86400000/30.44);
+  const inYr=(yy)=>rows.filter(r=>(r.created_date||"").startsWith(String(yy)));
+  const ytdSav=inYr(y).reduce((s,r)=>s+num(r.avalon_savings),0);
+  const ytdFee=inYr(y).reduce((s,r)=>s+num(r.avalon_fee),0);
+  const bookMo=(book.chronic+book.onc)/12;
+  let newPart=0;
+  for(let m=0;m<Math.floor(monthsLeft);m++)
+    newPart+=startsMo*compRate*(meanFill + contRate*meanFill*(fillsYr/12)*chronShare*Math.max(0,monthsLeft-m-1));
+  const projRemainder=bookMo*monthsLeft+newPart;
+  const eoySav=ytdSav+projRemainder;
+
+  // ---- five-year: decay the book, stack continuation-gated new cohorts
+  let bC=book.chronic+cohortRecurYr*(monthsLeft/12), bO=book.onc;
+  const years=[]; let cum=eoySav;
+  for(let t=1;t<=4;t++){
+    bC*=S.pers.chronic; bO*=S.pers.onc;
+    const tot=Math.max(0,bC+bO+cohortOnceYr+cohortRecurYr*0.5); // newest cohort ramps mid-year
+    years.push({year:y+t,v:tot}); cum+=tot;
+    bC+=cohortRecurYr;
+  }
+
+  // ---- AWP-switch potential (per fill -> annualized by class)
+  const perFillPot=(r)=>{ const a=num(r.awp); if(!a)return 0; const aa=num(r.aa_price); return aa>0?Math.max(0,a-aa):a*savRatio; };
+  const pot=(list)=>{ let n=0,unq=0,fill=0,yr=0;
+    for(const r of list){ n++; const v=perFillPot(r); if(!v){unq++;continue;} fill+=v; yr+= clsOf(r)==="acute"? v : v*fillsYr; }
+    return {n,unq,fill,yr}; };
+  const openPot=pot(rows.filter(r=>isOpen(r.status)));
+  const missedPot=pot(rows.filter(r=>isClosed(r.status)));
+
+  const actual=(yy)=>inYr(yy).reduce((s,r)=>s+num(r.avalon_savings),0);
+  return {q,interval,fillsYr,savRatio,feeRatio,compRate,medFill,meanFill,contRate,contElig,activeN,imputed,
+    bookYr:book.chronic+book.onc,startsMo,chronShare,cohortOnceYr,cohortRecurYr,
+    y,monthsLeft,ytdSav,ytdFee,projRemainder,eoySav,years,cum,
+    openPot,missedPot,anchor,staleDays,actual,pairsN:pairs.size};
+}
+
+function renderProjections(rows){
+  $("scen").innerHTML=Object.entries(SCEN).map(([k,s])=>`<button type="button" data-scen="${k}" class="${k===PSCEN?"on":""}">${s.label}</button>`).join("");
+  const P={}; for(const k in SCEN) P[k]=projStats(rows,k);
+  const p=P[PSCEN];
+
+  // mini KPIs with cons-opt ranges
+  const rng=(f)=>moneyK(Math.min(f(P.cons),f(P.opt)))+" – "+moneyK(Math.max(f(P.cons),f(P.opt)));
+  const cell=(k,v,s)=>`<div class="cell"><div class="k">${k}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`;
+  $("proj-kpis").innerHTML =
+    cell("Projected "+p.y+" savings",moneyK(p.eoySav),"range "+rng(x=>x.eoySav))+
+    cell("Recurring run-rate",moneyK(p.bookYr)+"/yr",p.activeN+" active member-drug pairs")+
+    cell("5-year cumulative",moneyK(p.cum),"range "+rng(x=>x.cum))+
+    cell("Pipeline potential",moneyK(p.openPot.yr)+"/yr",p.openPot.n+" open cases at AA vs AWP");
+
+  // chart: actual years solid, projected striped, translucent cap up to optimistic
+  const stripes=(c)=>`repeating-linear-gradient(45deg, ${c} 0 5px, color-mix(in srgb, ${c} 40%, transparent) 5px 9px)`;
+  const yrs=[];
+  for(let yy=2025;yy<p.y;yy++) yrs.push({k:yy,segs:[{v:p.actual(yy),bg:COL.green}],tot:p.actual(yy),tip:yy+": "+moneyK(p.actual(yy))+" actual"});
+  yrs.push({k:p.y,segs:[{v:p.ytdSav,bg:COL.green},{v:p.projRemainder,bg:stripes(COL.teal)}],tot:p.eoySav,
+    tip:p.y+": "+moneyK(p.ytdSav)+" actual YTD + "+moneyK(p.projRemainder)+" projected"});
+  p.years.forEach((yr,i)=>yrs.push({k:yr.year,segs:[{v:yr.v,bg:stripes(COL.teal)}],tot:yr.v,
+    tip:yr.year+": "+moneyK(yr.v)+" projected ("+moneyK(P.cons.years[i].v)+" – "+moneyK(P.opt.years[i].v)+")"}));
+  // optimistic cap segments
+  yrs.forEach((c,i)=>{ let opt=0;
+    if(c.k===p.y) opt=P.opt.eoySav; else if(c.k>p.y) opt=P.opt.years[c.k-p.y-1].v;
+    if(opt>c.tot) c.segs.push({v:opt-c.tot,bg:stripes("#9db3c4"),cap:1});
+  });
+  const max=Math.max(...yrs.map(c=>c.segs.reduce((s,x)=>s+x.v,0)),1);
+  $("proj-cols").innerHTML=yrs.map((c,i)=>{ const full=c.segs.reduce((s,x)=>s+x.v,0);
+    return `<div class="col" style="--i:${i}" title="${esc(c.tip)}">
+      <div class="tot num">${c.tot?moneyK(c.tot):""}</div>
+      <div class="stk" style="height:${Math.max(2,100*full/max)}%">
+        ${c.segs.map(s=>`<div class="seg" style="height:${full?100*s.v/full:0}%;background:${s.bg};${s.cap?"opacity:.45":""}"></div>`).join("")}
+      </div><div class="cl">${c.k}</div></div>`; }).join("");
+  $("proj-legend").innerHTML=[["Actual",COL.green,""],["Projected ("+SCEN[PSCEN].label.toLowerCase()+")",COL.teal,"striped"],["Upside to optimistic","#9db3c4","striped"]]
+    .map(([l,c,st])=>`<div class="li"><span class="sw" style="background:${st?stripes(c):c}"></span>${l}</div>`).join("");
+  $("proj-fee").innerHTML=`Projected Avalon fee — <b>${p.y}: ${moneyK(p.ytdFee+p.projRemainder*p.feeRatio)}</b> (${moneyK(p.ytdFee)} booked YTD) · 5-yr: <b>${moneyK(p.ytdFee+(p.cum-p.ytdSav)*p.feeRatio)}</b> · fee ≈ ${pct(p.feeRatio)} of savings.`;
+
+  // chronic/acute mix
+  const mix={}; for(const r of rows){ const c=classOf(r.medication_name); (mix[c] ||= {n:0,sav:0}); mix[c].n++; mix[c].sav+=num(r.avalon_savings); }
+  const mixSegs=Object.entries(mix).map(([c,o])=>({k:CLASS_META[c].label,v:o.n,sav:o.sav,color:CLASS_META[c].color})).sort((a,b)=>b.v-a.v);
+  $("mix-donut").innerHTML=donut(mixSegs,140);
+  $("mix-legend").innerHTML=mixSegs.map(d=>`<div class="li"><span class="sw" style="background:${d.color}"></span><span><b>${esc(d.k)}</b> ${int(d.v)}<span class="p">${pct(rows.length?d.v/rows.length:0)} · ${moneyK(d.sav)}</span></span></div>`).join("")||"<span style='color:var(--mute)'>—</span>";
+
+  // AWP-switch potential bars
+  hbars($("awp-switch"),[
+    {k:"Active book (realized)",v:p.bookYr},
+    {k:"Open pipeline",v:p.openPot.yr},
+    {k:"Closed, no fill (missed)",v:p.missedPot.yr}
+  ].filter(d=>d.v>0),(v)=>moneyK(v)+"/yr",COL.teal);
+  $("awp-note").innerHTML=`If every priced open case switched from AWP to AA pricing: <b>${moneyK(p.openPot.fill)}</b> per fill cycle, <b>${moneyK(p.openPot.yr)}/yr</b> annualized (chronic recurrence).`+
+    (p.openPot.unq?` ${p.openPot.unq} open cases are not yet priced.`:"")+
+    ` Closed-without-fill cases represent <b>${moneyK(p.missedPot.yr)}/yr</b> walked away.`;
+
+  // methodology, with the live parameters
+  $("meth").innerHTML=[
+    `<b>Refill cadence</b> measured from ${p.q.n} observed refill gaps: median <b class="num">${Math.round(p.q.med)}d</b> → <b class="num">${p.fillsYr.toFixed(1)} fills/yr</b> (scenario uses ${Math.round(p.interval)}d).`,
+    `<b>Chronic vs acute</b>: therapeutic lookup below. Chronic fills recur; acute counted once. Unclassified drugs treated as chronic.`,
+    `<b>Active book</b>: member+drug pairs with a completed fill within 2× the median gap of last data — ${p.activeN} pairs, ${moneyK(p.bookYr)}/yr.${p.imputed?` ${p.imputed} unpriced pairs imputed from drug averages.`:""}`,
+    `<b>Persistence</b>: book decays ${pct(1-SCEN[PSCEN].pers.chronic)}/yr (maintenance) and ${pct(1-SCEN[PSCEN].pers.onc)}/yr (limited-course), in line with published specialty adherence rates.`,
+    `<b>New business</b>: ${p.startsMo?`${p.startsMo.toFixed(1)} new member-drug starts/mo (trailing ${SCEN[PSCEN].startWin}mo) × ${pct(p.compRate)} completion × ${moneyK(p.meanFill)} avg fill; only ${pct(p.contRate)} keep refilling (observed continuation, n=${p.contElig})`:"none assumed (conservative)"}.`,
+    `<b>AA economics</b>: savings observed at ${pct(p.savRatio)} of AWP across ${rows.filter(r=>isCompleted(r.status)&&num(r.avalon_savings)>0).length} priced completions; fee ${pct(p.feeRatio)} of savings.`
+  ].map(s=>`<li>${s}</li>`).join("");
+  $("meth-stale").textContent = p.staleDays>45 ? `⚠ No new cases synced in ${p.staleDays} days (last: ${p.anchor}). Projections lean on the existing book — verify the CRM sync before relying on run-rate.` : "";
+  const meds=[...new Set(rows.map(r=>normMed(r.medication_name)).filter(Boolean))].sort();
+  $("cl-list").innerHTML=["chronic","onc","acute","unknown"].map(c=>{
+    const list=meds.filter(m=>classOf(m)===c); if(!list.length)return "";
+    return `<div style="margin-bottom:8px"><b style="color:${CLASS_META[c].color}">${CLASS_META[c].label}</b><br>${list.map(m=>`<span class="cl-tag">${esc(m)}</span>`).join("")}</div>`;
+  }).join("");
+}
+$("scen").addEventListener("click",(e)=>{
+  const b=e.target.closest("[data-scen]"); if(!b)return;
+  PSCEN=b.dataset.scen; localStorage.setItem("avalon-scen",PSCEN); render();
+});
 
 // ---- reveal-on-scroll animation ----
 let io;

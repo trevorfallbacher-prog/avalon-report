@@ -202,6 +202,25 @@
   .pk .v { font-size:21px; font-weight:700; color:var(--navy); margin-top:3px; letter-spacing:-.01em; }
   .pk .s { font-size:11px; color:var(--soft); margin-top:2px; }
   .pnote { margin-top:12px; font-size:12px; color:var(--soft); }
+  /* stop-loss claimant bars */
+  .slbars { display:flex; flex-direction:column; gap:10px; }
+  .slbar { display:grid; grid-template-columns:120px 1fr 200px; align-items:center; gap:12px; }
+  .slbar .lbl { font-family:var(--mono); font-size:11px; color:var(--soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .slbar .track { position:relative; height:22px; background:var(--hair2); border-radius:6px; }
+  .slbar .seg { position:absolute; top:0; bottom:0; }
+  .slbar .seg.aa { background:var(--navy); border-radius:6px 0 0 6px; }
+  .slbar .seg.sav { background:var(--green-soft,#abc269); }
+  .slbar .dedline { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--bad); z-index:2; }
+  .slbar .halfline { position:absolute; top:0; bottom:0; width:0; border-left:1.5px dashed var(--warn); opacity:.8; }
+  .slbar .val { font-size:11.5px; color:var(--soft); white-space:nowrap; }
+  .slbar .val b { color:var(--ink); }
+  .slbadge { display:inline-block; border-radius:5px; padding:0 6px; font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; margin-left:6px; }
+  .slbadge.good { background:#E4F0E4; color:var(--good); }
+  .slbadge.bad { background:#F6E4DC; color:var(--bad); }
+  .slbadge.warn { background:#F7EED8; color:#9C7311; }
+  html.dark .slbadge.good { background:#173322; } html.dark .slbadge.bad { background:#3A2018; } html.dark .slbadge.warn { background:#332A12; }
+  .linechart svg { display:block; width:100%; height:auto; }
+  .linechart text { font-family:var(--mono); font-size:10px; fill:var(--mute); }
   .meth { margin:0; padding-left:18px; font-size:12.5px; color:var(--soft); display:flex; flex-direction:column; gap:7px; }
   .meth b { color:var(--ink); }
   .stale { margin-top:10px; font-size:12px; color:var(--warn); font-weight:600; }
@@ -297,7 +316,7 @@
           <span class="scen" id="scen"></span>
         </div>
         <div class="pk" id="proj-kpis"></div>
-        <div class="cols" id="proj-cols" style="height:200px"></div>
+        <div class="linechart" id="proj-cols"></div>
         <div class="legend" id="proj-legend" style="flex-direction:row;gap:16px;margin-top:14px;flex-wrap:wrap"></div>
         <div class="pnote" id="proj-fee"></div>
       </div>
@@ -326,6 +345,20 @@
         <div class="kicker">Longevity &amp; lifetime value <span class="hint">· SSA life table</span></div>
         <div class="pk" id="long-kpis" style="grid-template-columns:repeat(2,1fr)"></div>
         <div class="pnote" id="long-note"></div>
+      </div>
+      <div class="panel span12">
+        <div class="kicker" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Stop-loss exposure <span class="hint">· annualized specialty-Rx cost per member vs specific deductible</span>
+          <span class="scen" id="sl-ded"></span>
+        </div>
+        <div class="pk" id="sl-kpis"></div>
+        <div class="slbars" id="sl-bars"></div>
+        <div class="pnote" id="sl-note"></div>
+      </div>
+      <div class="panel span12">
+        <div class="kicker">Aggregate accumulation <span class="hint">· cumulative cost vs 125% corridor, specialty-Rx slice</span></div>
+        <div class="linechart" id="corridor"></div>
+        <div class="legend" id="corridor-legend" style="flex-direction:row;gap:16px;margin-top:12px;flex-wrap:wrap"></div>
+        <div class="pnote" id="corridor-note"></div>
       </div>
       <div class="panel span7">
         <div class="kicker" id="trend-kicker">Cases per quarter <span class="hint">· by outcome</span></div>
@@ -871,28 +904,22 @@ function renderProjections(rows){
     cell("5-year cumulative",moneyK(p.cum),"range "+rng(x=>x.cum))+
     cell("Pipeline potential",moneyK(p.openPot.yr)+"/yr",p.openPot.n+" open cases at AA vs AWP");
 
-  // chart: actual years solid, projected striped, translucent cap up to optimistic
-  const stripes=(c)=>`repeating-linear-gradient(45deg, ${c} 0 5px, color-mix(in srgb, ${c} 40%, transparent) 5px 9px)`;
-  const yrs=[];
-  for(let yy=2025;yy<p.y;yy++) yrs.push({k:yy,segs:[{v:p.actual(yy),bg:COL.green}],tot:p.actual(yy),tip:yy+": "+moneyK(p.actual(yy))+" actual"});
-  yrs.push({k:p.y,segs:[{v:p.ytdSav,bg:COL.green},{v:p.projRemainder,bg:stripes(COL.teal)}],tot:p.eoySav,
-    tip:p.y+": "+moneyK(p.ytdSav)+" actual YTD + "+moneyK(p.projRemainder)+" projected"});
-  p.years.forEach((yr,i)=>yrs.push({k:yr.year,segs:[{v:yr.v,bg:stripes(COL.teal)}],tot:yr.v,
-    tip:yr.year+": "+moneyK(yr.v)+" projected ("+moneyK(P.cons.years[i].v)+" – "+moneyK(P.opt.years[i].v)+")"}));
-  // optimistic cap segments
-  yrs.forEach((c,i)=>{ let opt=0;
-    if(c.k===p.y) opt=P.opt.eoySav; else if(c.k>p.y) opt=P.opt.years[c.k-p.y-1].v;
-    if(opt>c.tot) c.segs.push({v:opt-c.tot,bg:stripes("#9db3c4"),cap:1});
-  });
-  const max=Math.max(...yrs.map(c=>c.segs.reduce((s,x)=>s+x.v,0)),1);
-  $("proj-cols").innerHTML=yrs.map((c,i)=>{ const full=c.segs.reduce((s,x)=>s+x.v,0);
-    return `<div class="col" style="--i:${i}" title="${esc(c.tip)}">
-      <div class="tot num">${c.tot?moneyK(c.tot):""}</div>
-      <div class="stk" style="height:${Math.max(2,100*full/max)}%">
-        ${c.segs.map(s=>`<div class="seg" style="height:${full?100*s.v/full:0}%;background:${s.bg};${s.cap?"opacity:.45":""}"></div>`).join("")}
-      </div><div class="cl">${c.k}</div></div>`; }).join("");
-  $("proj-legend").innerHTML=[["Actual",COL.green,""],["Projected ("+SCEN[PSCEN].label.toLowerCase()+")",COL.teal,"striped"],["Upside to optimistic","#9db3c4","striped"]]
-    .map(([l,c,st])=>`<div class="li"><span class="sw" style="background:${st?stripes(c):c}"></span>${l}</div>`).join("");
+  // fan chart: actual point(s), selected-scenario line, comfort band spanning
+  // all scenarios — the presentation actuarial shops use for claim projections
+  const yearsX=[]; for(let yy=2025;yy<p.y;yy++) yearsX.push(yy); yearsX.push(p.y); p.years.forEach(yr=>yearsX.push(yr.year));
+  const ser=(pp)=>{const a=[]; for(let yy=2025;yy<p.y;yy++)a.push(p.actual(yy)); a.push(pp.eoySav); pp.years.forEach(x=>a.push(x.v)); return a;};
+  const sb=ser(P.base), sc2=ser(P.cons), so2=ser(P.opt), ssel=ser(P[PSCEN]);
+  const lo=sb.map((_,i)=>Math.min(sc2[i],sb[i],so2[i])), hi=sb.map((_,i)=>Math.max(sc2[i],sb[i],so2[i]));
+  const actN=p.y-2025; // indices below this are pure actuals
+  $("proj-cols").innerHTML=lineChart({
+    xlabels:yearsX, yfmt:moneyK,
+    band:{lo,hi,fill:"rgba(28,128,184,.13)",from:Math.max(0,actN-1)},
+    series:[
+      {pts:ssel,stroke:COL.teal,width:2.5,dots:1,labels:1},
+      {pts:ssel.slice(0,actN),stroke:COL.green,width:3,dots:1}
+    ]});
+  $("proj-legend").innerHTML=[["Actual",COL.green],["Projection ("+SCEN[PSCEN].label.toLowerCase()+")",COL.teal],["Scenario range","rgba(28,128,184,.25)"]]
+    .map(([l,c])=>`<div class="li"><span class="sw" style="background:${c}"></span>${l}</div>`).join("");
   $("proj-fee").innerHTML=CLIENT?"":`Projected Avalon fee — <b>${p.y}: ${moneyK(p.ytdFee+p.projRemainder*p.feeRatio)}</b> (${moneyK(p.ytdFee)} booked YTD) · 5-yr: <b>${moneyK(p.ytdFee+(p.cum-p.ytdSav)*p.feeRatio)}</b> · fee ≈ ${pct(p.feeRatio)} of savings.`;
 
   // chronic/acute mix
@@ -955,12 +982,131 @@ function renderProjections(rows){
     `<b>AA economics</b>: savings observed at ${pct(p.savRatio)} of AWP across ${rows.filter(r=>isCompleted(r.status)&&num(r.avalon_savings)>0).length} priced completions${CLIENT?"":`; fee ${pct(p.feeRatio)} of savings`}.`
   ].filter(Boolean).map(s=>`<li>${s}</li>`).join("");
   $("meth-stale").textContent = p.staleDays>45 ? `⚠ No new cases synced in ${p.staleDays} days (last: ${p.anchor}). Projections lean on the existing book — verify the CRM sync before relying on run-rate.` : "";
+  renderStopLoss(rows,p);
+  renderCorridor(rows);
+
   const meds=[...new Set(rows.map(r=>normMed(r.medication_name)).filter(Boolean))].sort();
   $("cl-list").innerHTML=["chronic","onc","acute","unknown"].map(c=>{
     const list=meds.filter(m=>classOf(m)===c); if(!list.length)return "";
     return `<div style="margin-bottom:8px"><b style="color:${CLASS_META[c].color}">${CLASS_META[c].label}</b><br>${list.map(m=>`<span class="cl-tag">${esc(m)}</span>`).join("")}</div>`;
   }).join("");
 }
+// generic responsive SVG line chart (fan bands, corridors, guides)
+function lineChart(cfg){
+  const W=900,H=250,padL=58,padR=18,padT=20,padB=28;
+  const n=cfg.xlabels.length;
+  const all=[...(cfg.band?cfg.band.hi:[]),...(cfg.guides||[]).map(g=>g.v),...cfg.series.flatMap(s=>s.pts.filter(v=>v!=null))];
+  const ymax=Math.max(...all,1)*1.1;
+  const X=(i)=>padL+(W-padL-padR)*(n<2?0.5:i/(n-1));
+  const Y=(v)=>padT+(H-padT-padB)*(1-v/ymax);
+  let out="";
+  for(let g=0;g<=4;g++){ const v=ymax*g/4,y=Y(v);
+    out+=`<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="var(--hair)" stroke-width="1"/>`+
+         `<text x="${padL-7}" y="${y+3}" text-anchor="end">${cfg.yfmt(v)}</text>`; }
+  const step=Math.ceil(n/14);
+  cfg.xlabels.forEach((l,i)=>{ if(i%step===0||i===n-1) out+=`<text x="${X(i)}" y="${H-9}" text-anchor="middle">${esc(String(l))}</text>`; });
+  if(cfg.band){
+    const f=cfg.band.from||0;
+    let d="M"+X(f)+" "+Y(cfg.band.lo[f]);
+    for(let i=f+1;i<n;i++) d+=" L"+X(i)+" "+Y(cfg.band.lo[i]);
+    for(let i=n-1;i>=f;i--) d+=" L"+X(i)+" "+Y(cfg.band.hi[i]);
+    out+=`<path d="${d} Z" fill="${cfg.band.fill}"/>`;
+  }
+  for(const g of cfg.guides||[])
+    out+=`<line x1="${padL}" y1="${Y(g.v)}" x2="${W-padR}" y2="${Y(g.v)}" stroke="${g.color}" stroke-width="1.5" stroke-dasharray="5 4"/>`+
+         `<text x="${W-padR}" y="${Y(g.v)-5}" text-anchor="end" fill="${g.color}">${esc(g.label)}</text>`;
+  for(const s of cfg.series){
+    const pts=s.pts.map((v,i)=>v==null?null:[X(i),Y(v)]).filter(Boolean);
+    if(pts.length>1) out+=`<polyline points="${pts.map(q=>q[0].toFixed(1)+","+q[1].toFixed(1)).join(" ")}" fill="none" stroke="${s.stroke}" stroke-width="${s.width||2}" ${s.dash?'stroke-dasharray="5 4"':''} stroke-linejoin="round" stroke-linecap="round"/>`;
+    if(s.dots) for(const q of pts) out+=`<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="3.5" fill="${s.stroke}"/>`;
+    if(s.labels) s.pts.forEach((v,i)=>{ if(v!=null) out+=`<text x="${X(i)}" y="${Y(v)-10}" text-anchor="middle" fill="var(--soft)">${cfg.yfmt(v)}</text>`; });
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${out}</svg>`;
+}
+
+// ---- stop-loss exposure: annualized per-member cost vs specific deductible ----
+let SL_DED=+localStorage.getItem("avalon-ded")||100000;
+const DED_OPTS=[50000,100000,150000,200000];
+function renderStopLoss(rows,p){
+  $("sl-ded").innerHTML=DED_OPTS.map(d=>`<button type="button" data-ded="${d}" class="${d===SL_DED?"on":""}">$${d/1000}K</button>`).join("");
+  const mem=new Map();
+  for(const r of rows){
+    if(!r.member_ref||!(num(r.awp)>0)) continue;
+    let o=mem.get(r.member_ref); if(!o){ o={t:r.member_ref,pairs:new Map()}; mem.set(r.member_ref,o); }
+    const k=normMed(r.medication_name);
+    let pr=o.pairs.get(k); if(!pr){ pr={cls:classOf(r.medication_name),awp:0,aa:0,n:0}; o.pairs.set(k,pr); }
+    const aa=num(r.aa_price)>0?num(r.aa_price):(num(r.avalon_savings)>0?Math.max(0,num(r.awp)-num(r.avalon_savings)):num(r.awp)*(1-p.savRatio));
+    pr.awp+=num(r.awp); pr.aa+=aa; pr.n++;
+  }
+  const list=[];
+  for(const o of mem.values()){
+    let awpYr=0,aaYr=0;
+    for(const pr of o.pairs.values()){ const f=pr.cls==="acute"?1:p.fillsYr; awpYr+=(pr.awp/pr.n)*f; aaYr+=(pr.aa/pr.n)*f; }
+    list.push({t:o.t,awpYr,aaYr});
+  }
+  list.sort((a,b)=>b.awpYr-a.awpYr);
+  const ded=SL_DED;
+  const overAwp=list.filter(m=>m.awpYr>=ded), overAa=list.filter(m=>m.aaYr>=ded);
+  const halfAa=list.filter(m=>m.aaYr>=ded/2&&m.aaYr<ded);
+  const cell=(k,v,s)=>`<div class="cell"><div class="k">${k}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`;
+  $("sl-kpis").innerHTML=
+    cell("Would breach at AWP",int(overAwp.length),"members over the specific")+
+    cell("Breach at AA price",int(overAa.length),"after Avalon sourcing")+
+    cell("Breaches avoided",int(overAwp.length-overAa.length),"stop-loss claims prevented")+
+    cell("In the 50% zone",int(halfAa.length),"at AA · watch list");
+  const shown=list.slice(0,14);
+  const scale=Math.max(ded*1.3,...shown.map(m=>m.awpYr),1);
+  const px=(v)=>Math.min(100,100*v/scale);
+  $("sl-bars").innerHTML=shown.map((m,i)=>{
+    const badge=m.aaYr>=ded?'<span class="slbadge bad">over at AA</span>'
+      :m.awpYr>=ded?'<span class="slbadge good">breach avoided</span>'
+      :m.aaYr>=ded/2?'<span class="slbadge warn">50% zone</span>':"";
+    return `<div class="slbar" style="--i:${i}" title="At AWP ${moneyK(m.awpYr)}/yr · at AA ${moneyK(m.aaYr)}/yr">
+      <span class="lbl">${esc(m.t)}</span>
+      <span class="track">
+        <span class="seg sav" style="left:0;width:${px(m.awpYr)}%"></span>
+        <span class="seg aa" style="left:0;width:${px(m.aaYr)}%"></span>
+        <span class="halfline" style="left:${px(ded/2)}%"></span>
+        <span class="dedline" style="left:${px(ded)}%"></span>
+      </span>
+      <span class="val num"><b>${moneyK(m.aaYr)}</b> / ${moneyK(m.awpYr)}${badge}</span>
+    </div>`; }).join("") || `<div style="color:var(--mute);font-size:13px">No priced members under these filters.</div>`;
+  $("sl-note").innerHTML=`Navy = annualized cost at AA price; green = additional exposure at AWP list; red line = $${ded/1000}K specific deductible, dashed = the 50% watch threshold carriers report on. Covers the Assist specialty-Rx slice only — plan medical claims are additive.`+(list.length>14?` Showing top 14 of ${list.length} members by AWP exposure.`:"");
+}
+$("sl-ded").addEventListener("click",(e)=>{
+  const b=e.target.closest("[data-ded]"); if(!b) return;
+  SL_DED=+b.dataset.ded; localStorage.setItem("avalon-ded",SL_DED); render();
+});
+
+// ---- aggregate accumulation corridor (125% attachment, anchored on with-Avalon run-rate) ----
+function renderCorridor(rows){
+  const comp=rows.filter(r=>isCompleted(r.status)&&num(r.awp)>0);
+  const ms=[...new Set(comp.map(r=>(r.created_date||"").slice(0,7)))].filter(m=>/^\d{4}-\d{2}$/.test(m)).sort();
+  if(ms.length<3){ $("corridor").innerHTML=`<div style="color:var(--mute);font-size:13px">Not enough priced months under these filters.</div>`; $("corridor-legend").innerHTML=""; $("corridor-note").textContent=""; return; }
+  const mA=new Map(),mN=new Map();
+  for(const r of comp){ const m=(r.created_date||"").slice(0,7);
+    mA.set(m,(mA.get(m)||0)+num(r.awp));
+    const aa=num(r.aa_price)>0?num(r.aa_price):Math.max(0,num(r.awp)-num(r.avalon_savings));
+    mN.set(m,(mN.get(m)||0)+aa); }
+  let ca=0,cn=0; const A=[],N=[];
+  for(const m of ms){ ca+=mA.get(m)||0; cn+=mN.get(m)||0; A.push(ca); N.push(cn); }
+  const avgNet=cn/ms.length;
+  const E=ms.map((_,i)=>avgNet*(i+1)), T=E.map(v=>v*1.25);
+  $("corridor").innerHTML=lineChart({
+    xlabels:ms.map(monthLabel), yfmt:moneyK,
+    band:{lo:E,hi:T,fill:"rgba(224,163,46,.13)",from:0},
+    series:[
+      {pts:E,stroke:COL.gold,width:1.5,dash:1},
+      {pts:T,stroke:"#C2603E",width:1.5,dash:1},
+      {pts:A,stroke:COL.navy,width:2.5,dots:1},
+      {pts:N,stroke:COL.green,width:2.5,dots:1}
+    ]});
+  $("corridor-legend").innerHTML=[["Cumulative at AWP (without program)",COL.navy],["Cumulative at AA (actual)",COL.green],["Expected (run-rate)",COL.gold],["125% attachment","#C2603E"]]
+    .map(([l,c])=>`<div class="li"><span class="sw" style="background:${c}"></span>${l}</div>`).join("");
+  const pi=A.findIndex((v,i)=>v>T[i]);
+  $("corridor-note").innerHTML=`Corridor anchored on the with-Avalon run-rate (what a carrier would price knowing the program). At AWP list the cumulative line ${pi>=0?`pierces the 125% attachment in <b>${monthLabel(ms[pi])}</b>`:"stays inside the corridor"}; actual spend closed <b>${moneyK(ca-cn)}</b> under the AWP path. Specialty-Rx slice only.`;
+}
+
 $("scen").addEventListener("click",(e)=>{
   const b=e.target.closest("[data-scen]"); if(!b)return;
   PSCEN=b.dataset.scen; localStorage.setItem("avalon-scen",PSCEN); render();

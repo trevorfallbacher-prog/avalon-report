@@ -679,11 +679,30 @@ function classOf(name){
 // Scenario knobs. interval() picks the assumed refill cadence from the observed
 // interval quantiles; pers = annual persistence (retention) by class; startWin =
 // trailing months used to estimate the new-start run rate (0 = no new business).
+// turnover = annual plan-exit hazard from employer switching (halved for
+// pediatric patients — job-lock — and +15%/yr for 65+ retiree run-off);
+// erosion = annual decay of the AWP-AA spread (biosimilar pressure)
 const SCEN = {
-  cons:{label:"Conservative", interval:(q)=>q.p75, pers:{chronic:.70,onc:.35}, startWin:0},
-  base:{label:"Base",         interval:(q)=>q.med, pers:{chronic:.80,onc:.50}, startWin:6},
-  opt: {label:"Optimistic",   interval:(q)=>Math.min(q.med,90), pers:{chronic:.88,onc:.60}, startWin:12}
+  cons:{label:"Conservative", interval:(q)=>q.p75, pers:{chronic:.70,onc:.35}, startWin:0,  turnover:.20, erosion:.05},
+  base:{label:"Base",         interval:(q)=>q.med, pers:{chronic:.80,onc:.50}, startWin:6,  turnover:.15, erosion:.03},
+  opt: {label:"Optimistic",   interval:(q)=>Math.min(q.med,90), pers:{chronic:.88,onc:.60}, startWin:12, turnover:.10, erosion:.015}
 };
+// cumulative retention of a book entry t years out: drug persistence x
+// mortality x plan turnover (job-lock adjusted) x hard exits (Medicare at 65,
+// dependent aging off at 26 for pediatric patients) x spread erosion
+function retainFactor(b, t, S){
+  if(b.age<65 && b.age+t>=65) return 0;          // Medicare cliff: leaves commercial plan
+  if(b.age<18 && b.age+t>=26) return 0;          // dependent ages off the plan
+  let f=Math.pow(S.pers[b.cls]||S.pers.chronic,t);
+  for(let j=1;j<=t;j++){
+    f*=1-qx(b.age+j);                            // mortality at attained age
+    let to=S.turnover;
+    if(b.age<18) to*=0.5;                        // job-lock: child's therapy anchors the family plan
+    if(b.age>=65) to+=0.15;                      // retiree coverage run-off
+    f*=1-Math.min(.95,to);
+  }
+  return f*Math.pow(1-S.erosion,t);
+}
 let PSCEN = localStorage.getItem("avalon-scen")||"base";
 if(!SCEN[PSCEN]) PSCEN="base";
 
@@ -790,27 +809,36 @@ function projStats(rows, scenKey){
   const projRemainder=bookMo*monthsLeft+newPart;
   const eoySav=ytdSav+projRemainder;
 
-  // ---- five-year: decay each book entry by drug persistence AND member survival
-  // (SSA life table), stack continuation-gated new cohorts (assumed median age)
+  // ---- five-year: decay each book entry by the full retention stack
+  // (persistence x mortality x turnover x Medicare/dependent cliffs x spread
+  // erosion), stack continuation-gated new cohorts (assumed median age)
+  const cohortB={cls:"chronic", age:mAge};
   const cohorts=[{v:cohortRecurYr*(monthsLeft/12), born:0}]; // partial current-year cohort
   const years=[]; let cum=eoySav;
   for(let t=1;t<=4;t++){
-    let tot=cohortOnceYr+cohortRecurYr*0.5; // new starts' first fills + newest cohort ramping mid-year
-    for(const b of bookList) tot+=b.v*Math.pow(S.pers[b.cls],t)*survive(b.age,t);
-    for(const c of cohorts) tot+=c.v*Math.pow(S.pers.chronic,t-c.born)*survive(mAge,t-c.born);
+    let tot=(cohortOnceYr+cohortRecurYr*0.5)*Math.pow(1-S.erosion,t); // new starts' first fills + newest cohort ramping mid-year
+    for(const b of bookList) tot+=b.v*retainFactor(b,t,S);
+    for(const c of cohorts) tot+=c.v*retainFactor(cohortB,t-c.born,S)*Math.pow(1-S.erosion,c.born);
     tot=Math.max(0,tot);
     years.push({year:y+t,v:tot}); cum+=tot;
     cohorts.push({v:cohortRecurYr, born:t});
   }
 
-  // lifetime value of the active book: run persistence x survival to exhaustion
+  // lifetime value of the active book: full retention stack run to exhaustion
   let lifetimeVal=0;
   for(const b of bookList) for(let t=0;t<=40;t++){
-    const w=Math.pow(S.pers[b.cls],t)*survive(b.age,t);
+    const w=retainFactor(b,t,S);
     if(w<0.005) break;
     lifetimeVal+=b.v*w;
   }
   const avgLE=knownAges.length? knownAges.reduce((s,a)=>s+leRemain(a),0)/knownAges.length : null;
+  // Medicare-cliff exposure within the projection window + client concentration
+  const cliff={n:0,v:0};
+  for(const b of bookList) if(b.age>=61&&b.age<65){ cliff.n++; cliff.v+=b.v; }
+  const bySav={}; for(const r of rows){ let c=((r.tpa||r.client_name||"—")+"").trim(); if(/^marpai/i.test(c))c="Marpai"; bySav[c]=(bySav[c]||0)+num(r.avalon_savings); }
+  const totSav=Object.values(bySav).reduce((a,b)=>a+b,0);
+  const topClient=Object.entries(bySav).sort((a,b)=>b[1]-a[1])[0]||["—",0];
+  const conc={name:topClient[0], share:totSav?topClient[1]/totSav:0};
 
   // ---- AWP-switch potential (per fill -> annualized by class)
   const perFillPot=(r)=>{ const a=num(r.awp); if(!a)return 0; const aa=num(r.aa_price); return aa>0?Math.max(0,a-aa):a*savRatio; };
@@ -825,7 +853,7 @@ function projStats(rows, scenKey){
     bookYr:book.chronic+book.onc,startsMo,chronShare,cohortOnceYr,cohortRecurYr,
     y,monthsLeft,ytdSav,ytdFee,projRemainder,eoySav,years,cum,
     openPot,missedPot,anchor,staleDays,actual,pairsN:pairs.size,
-    medianAge,agesKnown:knownAges.length,lifetimeVal,avgLE};
+    medianAge,agesKnown:knownAges.length,lifetimeVal,avgLE,cliff,conc};
 }
 
 function renderProjections(rows){
@@ -906,9 +934,9 @@ function renderProjections(rows){
   const lcell=(k,v,s)=>`<div class="cell"><div class="k">${k}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`;
   $("long-kpis").innerHTML=
     lcell("Avg remaining life expectancy",p.avgLE?p.avgLE.toFixed(1)+" yrs":"—",p.agesKnown?p.agesKnown+" member-drug pairs aged":"pending age backfill")+
-    lcell("Lifetime value · active book",p.activeN?moneyK(p.lifetimeVal):"—","persistence × survival to exhaustion");
+    lcell("Lifetime value · active book",p.activeN?moneyK(p.lifetimeVal):"—","full retention stack to exhaustion");
   $("long-note").innerHTML=p.agesKnown
-    ? "Each active book entry decays by drug persistence <i>and</i> annual survival at the member's age (SSA 2022 period life table, sexes combined). Younger chronic members compound savings for decades — age is why two books with the same run-rate can differ several-fold in lifetime value."
+    ? "Each active book entry decays by drug persistence, annual survival at the member's age (SSA 2022 life table), employer-turnover hazard (job-lock-adjusted), the Medicare cliff at 65, and spread erosion. Younger chronic members compound for decades — age is why two books with the same run-rate can differ several-fold in lifetime value."
     : "Using a median-age-52 placeholder until ages sync; the 5-year and lifetime figures refine automatically once the backfill runs.";
 
   // methodology, with the live parameters
@@ -918,9 +946,13 @@ function renderProjections(rows){
     `<b>Active book</b>: member+drug pairs with a completed fill within 2× the median gap of last data — ${p.activeN} pairs, ${moneyK(p.bookYr)}/yr.${p.imputed?` ${p.imputed} unpriced pairs imputed from drug averages.`:""}`,
     `<b>Persistence</b>: book decays ${pct(1-SCEN[PSCEN].pers.chronic)}/yr (maintenance) and ${pct(1-SCEN[PSCEN].pers.onc)}/yr (limited-course), in line with published specialty adherence rates.`,
     `<b>Mortality</b>: each projected year also multiplies by survival at the member's age (SSA 2022 life table${p.agesKnown?`, ${p.agesKnown} pairs aged, median ${p.medianAge}`:` — ages pending backfill, median 52 assumed`}).`,
+    `<b>Plan attrition</b>: ${pct(SCEN[PSCEN].turnover)}/yr employer-turnover hazard — halved for pediatric patients (job-lock: a child's specialty therapy anchors the family to the plan), +15%/yr for 65+ retiree run-off.`,
+    `<b>Medicare cliff</b>: each member's stream ends the year they cross 65${p.cliff.n?` — ${p.cliff.n} active pairs (${moneyK(p.cliff.v)}/yr) cross inside this window`:""}. Pediatric dependents age off at 26.`,
+    `<b>Spread erosion</b>: per-fill savings decay ${pct(SCEN[PSCEN].erosion)}/yr as biosimilars compress AWP-to-AA spreads (Humira, Stelara already).`,
+    CLIENT?"":`<b>Concentration</b>: ${esc(p.conc.name)} is ${pct(p.conc.share)} of savings — projections assume contract continuity; a single renewal dominates model risk.`,
     `<b>New business</b>: ${p.startsMo?`${p.startsMo.toFixed(1)} new member-drug starts/mo (trailing ${SCEN[PSCEN].startWin}mo) × ${pct(p.compRate)} completion × ${moneyK(p.meanFill)} avg fill; only ${pct(p.contRate)} keep refilling (observed continuation, n=${p.contElig})`:"none assumed (conservative)"}.`,
     `<b>AA economics</b>: savings observed at ${pct(p.savRatio)} of AWP across ${rows.filter(r=>isCompleted(r.status)&&num(r.avalon_savings)>0).length} priced completions${CLIENT?"":`; fee ${pct(p.feeRatio)} of savings`}.`
-  ].map(s=>`<li>${s}</li>`).join("");
+  ].filter(Boolean).map(s=>`<li>${s}</li>`).join("");
   $("meth-stale").textContent = p.staleDays>45 ? `⚠ No new cases synced in ${p.staleDays} days (last: ${p.anchor}). Projections lean on the existing book — verify the CRM sync before relying on run-rate.` : "";
   const meds=[...new Set(rows.map(r=>normMed(r.medication_name)).filter(Boolean))].sort();
   $("cl-list").innerHTML=["chronic","onc","acute","unknown"].map(c=>{

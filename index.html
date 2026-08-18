@@ -181,6 +181,15 @@
   .cal-foot button { font-family:var(--mono); font-size:11px; border-radius:7px; padding:6px 10px; cursor:pointer; border:1px solid var(--hair); background:var(--card); color:var(--soft); }
   .cal-foot .apply { background:var(--navy); color:#fff; border-color:var(--navy); }
 
+  /* by-member table */
+  #member-table td.tok { font-family:var(--mono); font-size:11.5px; color:var(--soft); letter-spacing:.02em; }
+  #member-table tr.mrow { cursor:pointer; }
+  #member-table tr.mrow:hover td { background:var(--hair2); }
+  #member-table tr.mrow.on td { background:#E4EEF9; }
+  html.dark #member-table tr.mrow.on td { background:#183246; }
+  .chip.c-member { color:#315280; border-color:#A9BCD6; font-family:var(--mono); }
+  html.dark .chip.c-member { color:#9DBBDD; }
+
   /* projections */
   .scen { display:flex; gap:6px; margin-left:auto; }
   .scen button { background:var(--card); border:1px solid var(--hair); border-radius:7px; color:var(--soft); padding:5px 10px; font-family:var(--mono); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; }
@@ -336,6 +345,20 @@
         <div class="bars" id="close-reasons"></div>
       </div>
       <div class="panel span12">
+        <div class="kicker">By member <span class="hint">· pseudonymous tokens, no identities · click a row to focus the whole report</span></div>
+        <div style="overflow-x:auto">
+          <table id="member-table">
+            <thead><tr>
+              <th>Member</th><th>Age</th><th class="r">Cases</th><th class="r">Completed</th>
+              <th>Medications</th><th class="r">AWP</th><th class="r">Avalon savings</th><th class="r">Avalon fee</th>
+            </tr></thead><tbody></tbody>
+          </table>
+        </div>
+        <div class="pnote" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <button class="exp" id="mem-all" type="button">SHOW ALL</button><span id="mem-note"></span>
+        </div>
+      </div>
+      <div class="panel span12">
         <div class="kicker">Channel detail</div>
         <div style="overflow-x:auto">
           <table id="channel-table">
@@ -361,7 +384,7 @@ document.querySelectorAll(".logo").forEach(el => el.innerHTML = LOGO);
 
 let RAW = [];
 // filter state: multi-select sets + granularity + timeframe set + date range
-const F = { client:new Set(), source:new Set(), status:new Set(), gran:"Q", tf:new Set(), range:null };
+const F = { client:new Set(), source:new Set(), status:new Set(), gran:"Q", tf:new Set(), range:null, member:new Set() };
 
 const money=(n)=>"$"+Math.round(n).toLocaleString("en-US");
 const moneyK=(n)=>Math.abs(n)>=1e6?"$"+(n/1e6).toFixed(2)+"M":Math.abs(n)>=1e3?"$"+Math.round(n/1e3)+"K":"$"+Math.round(n);
@@ -447,12 +470,13 @@ document.addEventListener("click",(e)=>{ if(!e.target.closest(".slicer")) docume
 $("gran").addEventListener("change",(e)=>{ F.gran=e.target.value; F.tf.clear(); $("tf-btn").textContent=({Y:"YEARS",Q:"QUARTERS",M:"MONTHS"}[F.gran])+" ▾"; render(); });
 
 // ---- filtering ----
-function passes(r){
+function passes(r,ignoreMember){
   if(F.client.size && !F.client.has(clientOf(r))) return false;
   if(F.source.size && !F.source.has(r.source||"—")) return false;
   if(F.status.size && !F.status.has(r.status||"—")) return false;
   if(F.tf.size && !F.tf.has(periodKey(r))) return false;
   if(F.range){ const d=(r.created_date||"")+""; if(d<F.range.a||d>F.range.b) return false; }
+  if(!ignoreMember && F.member.size && !F.member.has(r.member_ref)) return false;
   return true;
 }
 
@@ -464,6 +488,7 @@ function renderChips(){
   for(const v of F.source) add("source","source",v,v);
   for(const v of F.status) add("status","status",v,v);
   for(const v of F.tf) add("tf","tf",v,periodLabel(v));
+  for(const v of F.member) add("member","member",v,"MEMBER "+v.slice(0,6)+"…");
   if(F.range) chips.push(`<button class="chip c-tf" data-clear="range" data-v="1">${shortDay(F.range.a)} – ${shortDay(F.range.b)} <span class="x">✕</span></button>`);
   const any = chips.length>0;
   $("chips").innerHTML = chips.join("") + (any?`<button class="chip reset" data-clear="all" data-v="1">RESET</button>`:"");
@@ -472,7 +497,7 @@ function renderChips(){
 $("chips").addEventListener("click",(e)=>{
   const c=e.target.closest(".chip"); if(!c)return;
   const dim=c.dataset.clear, v=c.dataset.v;
-  if(dim==="all"){ F.client.clear();F.source.clear();F.status.clear();F.tf.clear();F.range=null; }
+  if(dim==="all"){ F.client.clear();F.source.clear();F.status.clear();F.tf.clear();F.range=null;F.member.clear(); }
   else if(dim==="range"){ F.range=null; }
   else F[dim].delete(v);
   render();
@@ -527,6 +552,8 @@ function render(){
   hbars($("top-meds"),agg(rows,r=>r.medication_name,()=>1).sort((a,b)=>b.v-a.v).slice(0,8),int,COL.teal);
   hbars($("close-reasons"),agg(rows.filter(r=>isClosed(r.status)&&r.closed_reason),r=>r.closed_reason,()=>1).sort((a,b)=>b.v-a.v).slice(0,7),int,COL.blue);
 
+  renderMembers(RAW.filter(r=>passes(r,true)));
+
   const chans={};
   for(const r of rows){ const c=r.source||"—"; (chans[c] ||= {n:0,comp:0,sav:0,awp:0,fee:0}); const o=chans[c]; o.n++; if(isCompleted(r.status))o.comp++; o.sav+=num(r.avalon_savings); o.awp+=num(r.awp); o.fee+=num(r.avalon_fee); }
   $("channel-table").querySelector("tbody").innerHTML = Object.entries(chans).sort((a,b)=>b[1].sav-a[1].sav).map(([c,o])=>
@@ -536,6 +563,44 @@ function render(){
   $("foot").textContent = "Avalon Assist · live from CRM, de-identified · member counts use pseudonymous tokens · "+RAW.length+" cases loaded";
   reveal();
 }
+// ---- by-member table (pseudonymous tokens; ignores the member focus filter
+// so the list stays browsable while one member is focused) ----
+let MEM_ALL=false;
+const ageBand=(a)=>!a?"—":a<18?"0–17":a<35?"18–34":a<45?"35–44":a<55?"45–54":a<65?"55–64":a<75?"65–74":"75+";
+function renderMembers(rows){
+  const agg=new Map();
+  let noRef=0;
+  for(const r of rows){
+    const t=r.member_ref; if(!t){ noRef++; continue; }
+    let o=agg.get(t); if(!o){ o={t,age:0,ageD:"",n:0,comp:0,awp:0,sav:0,fee:0,meds:new Set()}; agg.set(t,o); }
+    o.n++; if(isCompleted(r.status))o.comp++;
+    o.awp+=num(r.awp); o.sav+=num(r.avalon_savings); o.fee+=num(r.avalon_fee);
+    const m=normMed(r.medication_name); if(m)o.meds.add(m);
+    const a=num(r.member_age); if(a>0&&(r.created_date||"")>=o.ageD){ o.age=a; o.ageD=r.created_date||""; }
+  }
+  const list=[...agg.values()].sort((a,b)=>b.sav-a.sav||b.awp-a.awp);
+  const shown=MEM_ALL?list:list.slice(0,12);
+  $("member-table").querySelector("tbody").innerHTML = shown.map(o=>{
+    const meds=[...o.meds];
+    const medTxt=meds.slice(0,2).join(", ")+(meds.length>2?" +"+(meds.length-2):"");
+    return `<tr class="mrow${F.member.has(o.t)?" on":""}" data-t="${esc(o.t)}" title="${esc(meds.join(", "))} — click to ${F.member.has(o.t)?"unfocus":"focus"}">
+      <td class="tok">${esc(o.t)}</td><td>${ageBand(o.age)}</td>
+      <td class="r num">${int(o.n)}</td><td class="r num">${int(o.comp)}</td>
+      <td>${esc(medTxt)}</td>
+      <td class="r num">${money(o.awp)}</td><td class="r num"><b>${money(o.sav)}</b></td><td class="r num">${money(o.fee)}</td></tr>`;
+  }).join("") || `<tr><td colspan="8" style="color:var(--mute)">No members under these filters.</td></tr>`;
+  $("mem-all").textContent = MEM_ALL?"TOP 12":"SHOW ALL";
+  $("mem-all").style.display = list.length>12?"":"none";
+  $("mem-note").textContent = `${list.length} members under current filters`+(MEM_ALL||list.length<=12?"":` · showing top 12 by savings`)+(noRef?` · ${noRef} cases have no member link`:"");
+}
+$("member-table").addEventListener("click",(e)=>{
+  const tr=e.target.closest("tr.mrow"); if(!tr)return;
+  const t=tr.dataset.t;
+  if(F.member.has(t)) F.member.delete(t); else { F.member.clear(); F.member.add(t); }
+  render();
+});
+$("mem-all").addEventListener("click",()=>{ MEM_ALL=!MEM_ALL; render(); });
+
 function agg(rows,keyFn,valFn){ const m=new Map(); for(const r of rows){const k=keyFn(r)||"—"; m.set(k,(m.get(k)||0)+valFn(r));} return [...m.entries()].map(([k,v])=>({k,v})); }
 function hbars(el,data,fmt,color){
   if(!data.length){ el.innerHTML=`<div style="color:var(--mute);font-size:13px">No data under these filters.</div>`; return; }

@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>NASH vs International — Sourcing</title>
+<style>
+  :root {
+    --navy:#315280; --teal:#1c80b8; --green:#8FA93E; --green-soft:#abc269; --blue:#abb9d4;
+    --ink:#1B2C3B; --soft:#4C6070; --mute:#8093A1;
+    --bg:#EEF3F8; --card:#FFFFFF; --hair:#DCE6EF; --hair2:#EAF1F7;
+    --good:#3E8E5A; --warn:#E0A32E; --bad:#C2603E; --intl:#4A5691;
+    --shadow:0 1px 3px rgba(26,46,61,.06), 0 8px 28px rgba(26,46,61,.07);
+    --mono:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+    --sans:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  html.dark {
+    --navy:#7FB0DE; --teal:#4BA8DC; --green:#AFC96A; --blue:#8fa0c4; --intl:#9AA6D6;
+    --ink:#E9F2F9; --soft:#A7BECE; --mute:#7C93A4;
+    --bg:#0B1824; --card:#102434; --hair:#203546; --hair2:#17303F;
+    --shadow:0 1px 3px rgba(0,0,0,.3), 0 8px 28px rgba(0,0,0,.32);
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; }
+  body { background:var(--bg); color:var(--ink); font-family:var(--sans); font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .num { font-variant-numeric:tabular-nums; }
+  h1,h2,h3 { margin:0; }
+  button { font-family:inherit; cursor:pointer; }
+  .logo svg { display:block; width:100%; height:100%; }
+  .top .logo svg { height:34px; width:auto; }
+  html.dark .logo svg .st1 { fill:#cfe0f0; }
+
+  #gate { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .gate-card { width:100%; max-width:400px; text-align:center; }
+  .gate-card .logo { width:190px; margin:0 auto 22px; display:block; }
+  .gate-card h1 { font-size:18px; color:var(--navy); letter-spacing:.12em; text-transform:uppercase; font-weight:700; }
+  .gate-card p { color:var(--soft); font-size:14px; margin:8px 0 22px; }
+  .gate-form { display:flex; gap:8px; }
+  .gate-form input { flex:1; min-width:0; padding:11px 14px; border:1px solid var(--hair); border-radius:10px; font-size:15px; background:var(--card); color:var(--ink); }
+  .gate-form button { background:var(--navy); color:#fff; border:0; border-radius:10px; padding:0 20px; font-weight:600; font-size:14px; }
+  .gate-err { color:var(--bad); font-size:13px; margin-top:12px; min-height:18px; }
+
+  #app { display:none; }
+  header.top { position:sticky; top:0; z-index:30; background:color-mix(in srgb, var(--card) 90%, transparent); backdrop-filter:blur(10px); border-bottom:1px solid var(--hair); }
+  .top-in { max-width:1280px; margin:0 auto; padding:14px 24px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .top .logo { height:34px; }
+  .top .titles { margin-right:auto; }
+  .top .titles .k { font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--teal); font-weight:700; }
+  .top .titles .t { font-size:17px; font-weight:700; color:var(--navy); line-height:1.15; }
+  .top .stamp { font-family:var(--mono); font-size:11px; color:var(--mute); }
+  .top .tbtn { border:1px solid var(--hair); background:var(--card); color:var(--soft); border-radius:8px; padding:7px 11px; font-size:12px; font-weight:600; text-transform:uppercase; }
+  .internal { background:#F7EED8; color:#9C7311; font-size:12px; font-weight:600; text-align:center; padding:6px 12px; }
+  html.dark .internal { background:#332A12; }
+
+  .wrap { max-width:1280px; margin:0 auto; padding:22px 24px 70px; }
+  .kpis { display:grid; grid-template-columns:repeat(6,1fr); gap:14px; margin-bottom:18px; }
+  @media(max-width:1000px){ .kpis{ grid-template-columns:repeat(2,1fr);} }
+  .kpi { background:var(--card); border:1px solid var(--hair); border-radius:14px; box-shadow:var(--shadow); padding:15px 16px; position:relative; overflow:hidden; }
+  .kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--accent,var(--teal)); }
+  .kpi .k { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); font-weight:600; }
+  .kpi .v { font-size:24px; font-weight:700; color:var(--navy); margin-top:6px; }
+  .kpi .s { font-size:11.5px; color:var(--soft); margin-top:3px; }
+
+  .grid { display:grid; grid-template-columns:repeat(12,1fr); gap:16px; }
+  .panel { background:var(--card); border:1px solid var(--hair); border-radius:14px; box-shadow:var(--shadow); padding:18px 20px; min-width:0; }
+  .span6{grid-column:span 6} .span12{grid-column:span 12}
+  @media(max-width:900px){ .span6{grid-column:span 12} }
+  .kicker { font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--mute); font-weight:700; margin-bottom:14px; }
+  .kicker .hint { font-weight:400; letter-spacing:0; text-transform:none; }
+
+  .bars { display:flex; flex-direction:column; gap:11px; }
+  .bar { display:grid; grid-template-columns:190px 1fr auto; align-items:center; gap:12px; }
+  .bar .lbl { font-size:12.5px; color:var(--soft); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .bar .track { display:block; height:20px; background:var(--hair2); border-radius:6px; overflow:hidden; }
+  .bar .fill { display:block; height:100%; border-radius:6px; min-width:2px; }
+  .bar .val { font-size:12px; font-weight:600; white-space:nowrap; }
+
+  .controls { display:flex; gap:9px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+  .controls input[type=search] { padding:8px 12px; border:1px solid var(--hair); border-radius:9px; font-size:14px; min-width:230px; background:var(--card); color:var(--ink); }
+  .fbtn { background:var(--card); border:1px solid var(--hair); border-radius:8px; color:var(--soft); padding:6px 11px; font-family:var(--mono); font-size:11.5px; letter-spacing:.05em; }
+  .fbtn.on { border-color:var(--teal); color:var(--teal); border-width:2px; padding:5px 10px; font-weight:700; }
+  .controls .count { margin-left:auto; font-family:var(--mono); font-size:12px; color:var(--mute); }
+
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--mute); font-weight:700; padding:0 8px 8px; border-bottom:1px solid var(--hair); }
+  th.r,td.r { text-align:right; }
+  td { padding:7px 8px; font-size:13px; border-bottom:1px solid var(--hair2); }
+  tr.drug { cursor:pointer; }
+  tr.drug:hover td { background:var(--hair2); }
+  td .src { font-family:var(--mono); font-size:10.5px; color:var(--mute); }
+  .tag { display:inline-block; border-radius:5px; padding:0 7px; font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; }
+  .tag.nash { background:#E4F0E4; color:var(--good); }
+  .tag.intl { background:#EEF0F8; color:var(--intl); }
+  .tag.only { background:var(--hair2); color:var(--mute); }
+  .tag.phone { background:#F7EED8; color:#9C7311; }
+  html.dark .tag.nash { background:#173322; } html.dark .tag.intl { background:#161d33; } html.dark .tag.phone { background:#332A12; }
+  .util { font-family:var(--mono); font-size:11px; color:var(--teal); }
+  tr.detail td { background:var(--hair2); padding:10px 14px; }
+  .offers { width:100%; }
+  .offers td { font-size:12px; font-family:var(--mono); border-bottom:1px solid var(--hair); padding:4px 8px; background:none; }
+  .more { margin-top:14px; border:1px solid var(--hair); background:var(--card); color:var(--soft); border-radius:8px; padding:8px 16px; font-family:var(--mono); font-size:12px; }
+  .more:hover { border-color:var(--teal); color:var(--teal); }
+  .pnote { margin-top:12px; font-size:12px; color:var(--soft); }
+  footer { max-width:1280px; margin:0 auto; padding:8px 24px 40px; color:var(--mute); font-size:11.5px; }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gate-card">
+    <div class="logo"></div>
+    <h1>NASH vs International</h1>
+    <p>Sourcing economics. Enter the internal report password — client passwords do not open this page.</p>
+    <form class="gate-form" id="gate-form">
+      <input id="gate-pw" type="password" placeholder="Password" autocomplete="current-password" autofocus>
+      <button type="submit" id="gate-btn">Unlock</button>
+    </form>
+    <div class="gate-err" id="gate-err"></div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="internal">INTERNAL — supplier pricing. Not for clients, brokers, or plan sponsors.</div>
+  <header class="top">
+    <div class="top-in">
+      <div class="logo"></div>
+      <div class="titles">
+        <div class="k">Avalon Assist · Sourcing</div>
+        <div class="t">NASH vs International Pricing</div>
+      </div>
+      <div class="stamp" id="stamp"></div>
+      <button class="tbtn" id="lock-btn" type="button">Lock</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <div class="kpis" id="kpis"></div>
+
+    <div class="grid">
+      <div class="panel span6">
+        <div class="kicker">Where international wins <span class="hint">· biggest NASH premiums vs best international, head-to-head drugs</span></div>
+        <div class="bars" id="intl-wins"></div>
+      </div>
+      <div class="panel span6">
+        <div class="kicker">Where NASH wins <span class="hint">· NASH under best international</span></div>
+        <div class="bars" id="nash-wins"></div>
+      </div>
+      <div class="panel span12">
+        <div class="kicker">Drug-level sourcing <span class="hint">· best $/unit per bucket across NDCs · click a row for every offer</span></div>
+        <div class="controls">
+          <input type="search" id="q" placeholder="Search drug name…">
+          <button class="fbtn on" data-f="all" type="button">ALL</button>
+          <button class="fbtn" data-f="util" type="button">OUR UTILIZATION</button>
+          <button class="fbtn" data-f="h2h" type="button">HEAD-TO-HEAD</button>
+          <button class="fbtn" data-f="nashwin" type="button">NASH CHEAPER</button>
+          <button class="fbtn" data-f="intlwin" type="button">INTL CHEAPER</button>
+          <button class="fbtn" data-f="nashonly" type="button">NASH ONLY</button>
+          <button class="fbtn" data-f="intlonly" type="button">INTL ONLY</button>
+          <span class="count" id="count"></span>
+        </div>
+        <div style="overflow-x:auto">
+          <table id="tbl">
+            <thead><tr>
+              <th>Drug</th><th class="r">Our cases</th><th class="r">NASH $/unit</th><th class="r">NASH 30-day</th>
+              <th class="r">Best intl $/unit</th><th>Intl source</th><th class="r">NASH vs intl</th><th>Position</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <button class="more" id="more" type="button">SHOW MORE</button>
+        <div class="pnote">Comparisons use each bucket's lowest normalized $/unit across all NDCs of the drug — pack sizes differ by source, so treat close calls as ties and confirm with AAPS before quoting. "Our cases" joins Assist utilization by brand. International = DMC, NorthScripts, North, ILMeds, MedsDirect-Global, Canada Outreach.</div>
+      </div>
+    </div>
+  </div>
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const API = "https://myrxcard-sync.trevorfallbacher.workers.dev";
+const LOGO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 182.2"><defs><style>.st0{fill:#abb9d4}.st1{fill:#315280}.st2{fill:#1c80b8}.st3{fill:#aac268}</style></defs><g><path class="st1" d="M292.9,127.8h-19.4l-6.5-17h-45.1l-6.6,17h-19.4l41.7-97.5h13.7l41.7,97.5ZM244.5,51.6l-17,44.3h34l-17-44.3Z"/><path class="st1" d="M274.3,58.3h18l18.7,49.5,18.7-49.5h18l-28.8,69.5h-15.6l-28.8-69.5Z"/><path class="st1" d="M420.2,58.3v69.5h-16.9v-12c-4,7.1-13.2,13.7-25.4,13.7-20.6,0-35.1-16.4-35.1-36.4s14.5-36.5,35.1-36.5,21.6,6.3,25.1,13.7v-12h17.1ZM381.4,115c11.6,0,21.3-8.5,21.3-21.9s-9.8-22-21.3-22-20.9,9.9-20.9,22,8.4,21.9,20.9,21.9Z"/><path class="st1" d="M428.9,127.8V26.1h17.6v101.7h-17.6Z"/><path class="st1" d="M452.2,93.2c0-19,14.2-36.5,38.2-36.5s38.2,17.6,38.2,36.5-14.2,36.4-38.2,36.4-38.2-17.6-38.2-36.4ZM469.4,93.2c0,11.3,7.5,21.7,21,21.7s21-10.4,21-21.7-7.5-21.9-21-21.9-21,10.6-21,21.9Z"/><path class="st1" d="M551.4,127.8h-17.6V58.3h17v11.8c3.2-8.1,12.3-13.5,23.1-13.5,16.7,0,26.1,12.3,26.1,29.5v41.7h-17.6v-38.7c0-9.9-4.5-17.1-14.9-17.1s-16.2,7-16.2,17v38.9Z"/></g><polygon class="st1" points="93.8 42.3 115.1 63.5 136.3 42.3 93.8 -.2 51.3 42.3 72.5 63.5 93.8 42.3"/><polygon class="st2" points="44.6 91.3 65.9 70 44.6 48.8 2.1 91.3 44.6 133.8 65.9 112.6 44.6 91.3"/><polygon class="st0" points="94.2 139.7 72.9 118.5 51.7 139.7 94.2 182.2 136.7 139.7 115.5 118.5 94.2 139.7"/><polygon class="st3" points="142.6 48.8 121.4 70 142.6 91.3 121.4 112.6 142.6 133.8 185.1 91.3 142.6 48.8"/></svg>`;
+const $=(id)=>document.getElementById(id);
+document.querySelectorAll(".logo").forEach(el=>el.innerHTML=LOGO);
+(function(){ const s=localStorage.getItem("avalon-theme"); if(s==="dark"||(!s&&matchMedia("(prefers-color-scheme:dark)").matches)) document.documentElement.classList.add("dark"); })();
+
+const INTL=new Set(["DMC","NorthScripts","North","ILMeds","MedsDirect-Global","Canada Outreach","GlobalRx"]);
+const PW_KEY="avalon-pw:nash";
+const money=(n)=>"$"+Math.round(n).toLocaleString("en-US");
+const unit=(n)=>n==null?"—":"$"+(n>=100?Math.round(n).toLocaleString("en-US"):n.toFixed(2));
+const pct=(n)=>(n>0?"+":"")+(n*100).toFixed(0)+"%";
+const int=(n)=>Math.round(n).toLocaleString("en-US");
+const esc=(s)=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const normMed=(s)=>(s||"").toLowerCase().replace(/\s*\(.*?\)\s*/g," ").replace(/\s+/g," ").trim();
+
+let ROWS=[], PRICING=null, LIMIT=60, FILTER="all", QUERY="", OPEN=null;
+
+async function unlock(pw){
+  const r1=await fetch(API,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({report_pw:pw,dataset:"pricing"})});
+  if(r1.status===403) throw new Error("bad");
+  if(r1.status===404) throw new Error("no pricing snapshot loaded yet");
+  if(!r1.ok) throw new Error("HTTP "+r1.status);
+  PRICING=await r1.json();
+  let cases=[];
+  try{ const r2=await fetch(API,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({report_pw:pw})});
+    if(r2.ok) cases=(await r2.json()).cases||[]; }catch{}
+  sessionStorage.setItem(PW_KEY,pw);
+  build(cases);
+  $("gate").style.display="none"; $("app").style.display="block";
+  $("stamp").textContent="SNAPSHOT "+String(PRICING.generated||"").replace("T"," ").toUpperCase();
+  render();
+}
+$("gate-form").addEventListener("submit",async(e)=>{
+  e.preventDefault();
+  const b=$("gate-btn"); b.disabled=true; b.textContent="…"; $("gate-err").textContent="";
+  try{ await unlock($("gate-pw").value.trim()); }
+  catch(err){ $("gate-err").textContent=err.message==="bad"?"That password doesn't open the internal sourcing view.":"Couldn't load: "+err.message; b.disabled=false; b.textContent="Unlock"; $("gate-pw").select(); }
+});
+$("lock-btn").addEventListener("click",()=>{ sessionStorage.removeItem(PW_KEY); location.reload(); });
+
+function build(cases){
+  // utilization by brand stem (first word) from Assist cases
+  const util=new Map();
+  for(const r of cases){
+    const stem=normMed(r.medication_name).split(" ")[0]; if(!stem) continue;
+    const u=util.get(stem)||{n:0,sav:0}; u.n++; u.sav+=Number(r.avalon_savings)||0; util.set(stem,u);
+  }
+  ROWS=[];
+  for(const [name,d] of Object.entries(PRICING.by_name||{})){
+    let nash=null,nash30=null,intl=null,intlSrc="",phone=false;
+    for(const n of d.ndcs||[]) for(const o of n.offers||[]){
+      const u=Number(o.price_per_unit);
+      if(o.source==="Phone-Confirmed"){ phone=true; }
+      if(!isFinite(u)||u<=0) continue;
+      if(o.source==="NASH"){ if(nash==null||u<nash) nash=u; if(o.day_supply_30_price&&(nash30==null||o.day_supply_30_price<nash30)) nash30=o.day_supply_30_price; }
+      else if(INTL.has(o.source)){ if(intl==null||u<intl){ intl=u; intlSrc=o.source; } }
+    }
+    if(nash==null&&intl==null) continue;
+    const stem=(name||"").toLowerCase().split(/[\s,]+/)[0];
+    const u=util.get(stem)||{n:0,sav:0};
+    ROWS.push({name,ndcs:d.ndcs||[],nash,nash30,intl,intlSrc,phone,
+      cases:u.n,sav:u.sav,delta:(nash!=null&&intl!=null)?(nash-intl)/intl:null});
+  }
+  ROWS.sort((a,b)=>(b.cases-a.cases)||Math.abs(b.delta??0)-Math.abs(a.delta??0)||a.name.localeCompare(b.name));
+}
+
+function passes(r){
+  if(QUERY&&!r.name.toLowerCase().includes(QUERY)) return false;
+  switch(FILTER){
+    case "util": return r.cases>0;
+    case "h2h": return r.delta!=null;
+    case "nashwin": return r.delta!=null&&r.delta<=0;
+    case "intlwin": return r.delta!=null&&r.delta>0;
+    case "nashonly": return r.nash!=null&&r.intl==null;
+    case "intlonly": return r.nash==null;
+    default: return true;
+  }
+}
+
+function render(){
+  const all=ROWS, h2h=all.filter(r=>r.delta!=null);
+  const nashWin=h2h.filter(r=>r.delta<=0), intlWin=h2h.filter(r=>r.delta>0);
+  const utilRows=all.filter(r=>r.cases>0), utilNash=utilRows.filter(r=>r.nash!=null);
+  const premiums=intlWin.map(r=>r.delta).sort((a,b)=>a-b);
+  const medPrem=premiums.length?premiums[Math.floor(premiums.length/2)]:0;
+  const kpi=(v,k,s,a)=>`<div class="kpi" style="--accent:${a}"><div class="k">${k}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`;
+  $("kpis").innerHTML=
+    kpi(int(all.filter(r=>r.nash!=null).length),"NASH-priced drugs","of "+int(all.length)+" comparable drugs","var(--green)")+
+    kpi(utilRows.length?Math.round(100*utilNash.length/utilRows.length)+"%":"—","Our utilization covered",utilNash.length+" of "+utilRows.length+" utilized brands","var(--teal)")+
+    kpi(int(nashWin.length),"NASH cheaper","head-to-head wins","var(--green)")+
+    kpi(int(intlWin.length),"International cheaper","median premium "+pct(medPrem)+" vs NASH","var(--intl)")+
+    kpi(int(all.filter(r=>r.nash==null).length),"International only","no NASH price on file","var(--intl)")+
+    kpi(int(all.filter(r=>r.nash!=null&&r.intl==null).length),"NASH only","no international offer","var(--blue)");
+
+  const wbar=(el,rows,color,fmt)=>{
+    const mx=Math.max(...rows.map(r=>Math.abs(r.delta)),0.01);
+    el.innerHTML=rows.map(r=>`<div class="bar" title="${esc(r.name)}: NASH ${unit(r.nash)} vs ${esc(r.intlSrc)} ${unit(r.intl)}">
+      <span class="lbl">${esc(titleCase(r.name))}${r.cases?` <span class="util">·${r.cases} cases</span>`:""}</span>
+      <span class="track"><span class="fill" style="width:${Math.max(3,100*Math.abs(r.delta)/mx)}%;background:${color}"></span></span>
+      <span class="val num" style="color:${color}">${fmt(r)}</span></div>`).join("")
+      || `<div style="color:var(--mute);font-size:13px">No head-to-head drugs.</div>`;
+  };
+  const byUtil=(a,b)=>(b.cases-a.cases)||Math.abs(b.delta)-Math.abs(a.delta);
+  wbar($("intl-wins"),intlWin.sort(byUtil).slice(0,10),"var(--intl)",(r)=>pct(r.delta)+" · "+unit(r.intl)+" "+r.intlSrc);
+  wbar($("nash-wins"),nashWin.sort(byUtil).slice(0,10),"var(--green)",(r)=>pct(r.delta)+" · NASH "+unit(r.nash));
+
+  renderTable();
+  $("foot").textContent="Avalon Assist sourcing · AAPS snapshot "+(PRICING.generated||"")+" · internal only · "+int(all.length)+" drugs";
+}
+const titleCase=(s)=>s.toLowerCase().replace(/\b[a-z]/g,c=>c.toUpperCase());
+
+function renderTable(){
+  const rows=ROWS.filter(passes);
+  $("count").textContent=int(rows.length)+" drugs";
+  const shown=rows.slice(0,LIMIT);
+  $("tbl").querySelector("tbody").innerHTML=shown.map((r)=>{
+    const tag=r.nash==null?`<span class="tag only">intl only</span>`
+      :r.intl==null?`<span class="tag only">NASH only</span>`
+      :r.delta<=0?`<span class="tag nash">NASH cheaper</span>`
+      :`<span class="tag intl">intl cheaper</span>`;
+    return `<tr class="drug" data-i="${ROWS.indexOf(r)}">
+      <td><b>${esc(titleCase(r.name))}</b>${r.phone?' <span class="tag phone">phone-confirmed</span>':""}</td>
+      <td class="r num">${r.cases?`<span class="util">${int(r.cases)} · ${money(r.sav)}</span>`:"—"}</td>
+      <td class="r num">${unit(r.nash)}</td>
+      <td class="r num">${r.nash30?money(r.nash30):"—"}</td>
+      <td class="r num">${unit(r.intl)}</td>
+      <td class="src">${esc(r.intlSrc||"—")}</td>
+      <td class="r num">${r.delta==null?"—":`<b style="color:${r.delta<=0?"var(--good)":"var(--bad)"}">${pct(r.delta)}</b>`}</td>
+      <td>${tag}</td></tr>`+
+      (OPEN===ROWS.indexOf(r)?`<tr class="detail"><td colspan="8">${detail(r)}</td></tr>`:"");
+  }).join("")||`<tr><td colspan="8" style="color:var(--mute)">Nothing matches.</td></tr>`;
+  $("more").style.display=rows.length>LIMIT?"":"none";
+}
+function detail(r){
+  const rows=[];
+  for(const n of r.ndcs) for(const o of n.offers||[])
+    rows.push(`<tr><td>${esc(n.ndc)}</td><td>${esc(o.source)}</td><td class="r">${unit(Number(o.price_per_unit)||null)}</td><td class="r">${o.pack_price?money(o.pack_price):"—"}</td><td>${esc(o.strength||"")}</td><td class="r">${o.day_supply_30_price?money(o.day_supply_30_price)+" /30d":""}${o.day_supply_90_price?" · "+money(o.day_supply_90_price)+" /90d":""}</td></tr>`);
+  return `<table class="offers"><thead><tr><th>NDC</th><th>Source</th><th class="r">$/unit</th><th class="r">Pack</th><th>Strength</th><th class="r">Day supply</th></tr></thead><tbody>${rows.join("")}</tbody></table>`;
+}
+
+$("tbl").addEventListener("click",(e)=>{
+  const tr=e.target.closest("tr.drug"); if(!tr) return;
+  const i=+tr.dataset.i; OPEN=OPEN===i?null:i; renderTable();
+});
+$("q").addEventListener("input",(e)=>{ QUERY=e.target.value.trim().toLowerCase(); LIMIT=60; OPEN=null; renderTable(); });
+document.querySelectorAll(".fbtn").forEach(b=>b.addEventListener("click",()=>{
+  FILTER=b.dataset.f; LIMIT=60; OPEN=null;
+  document.querySelectorAll(".fbtn").forEach(x=>x.classList.toggle("on",x===b));
+  renderTable();
+}));
+$("more").addEventListener("click",()=>{ LIMIT+=100; renderTable(); });
+
+(async()=>{ const s=sessionStorage.getItem(PW_KEY); if(s){ try{ await unlock(s); }catch{ sessionStorage.removeItem(PW_KEY); } } })();
+</script>
+</body>
+</html>

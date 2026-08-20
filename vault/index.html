@@ -264,7 +264,7 @@
   .kpi.vis { animation:fadeSlide .5s cubic-bezier(.2,.8,.25,1) backwards; animation-delay:calc(var(--i,0) * 65ms); }
   .vis .bar { animation:fadeSlide .45s cubic-bezier(.2,.8,.25,1) backwards; animation-delay:min(calc(var(--i,0) * 35ms),500ms); }
   .vis .bar .fill { animation:growX .9s cubic-bezier(.22,1,.36,1) backwards; animation-delay:min(calc(var(--i,0) * 30ms + 120ms),600ms); }
-  .vis .fstage .bar2 { animation:growX .8s cubic-bezier(.22,1,.36,1) backwards; }
+  .vis .fstage .bar2 { animation:growX .8s cubic-bezier(.22,1,.36,1) backwards; animation-delay:calc(var(--i,0) * 130ms); }
   .vis .col .stk { animation:riseY .8s cubic-bezier(.22,1,.36,1) backwards; transform-origin:bottom; animation-delay:min(calc(var(--i,0) * 25ms),400ms); }
   @media (prefers-reduced-motion:reduce) { *,*::before { animation:none !important; transition:none !important; } .kpi,.panel{opacity:1;} }
 
@@ -616,7 +616,8 @@ function render(){
   hbars($("ch-savings"),agg(rows,r=>r.source,r=>num(r.avalon_savings)).filter(d=>d.v>0).sort((a,b)=>b.v-a.v),moneyK,COL.green);
 
   const openN=rows.filter(r=>isOpen(r.status)).length, closedN=rows.filter(r=>isClosed(r.status)).length, fmax=Math.max(rows.length,1);
-  const stage=(n,label,color)=>`<div class="fstage"><div class="bar2" style="width:${Math.max(8,100*n/fmax)}%;background:${color}">${int(n)}</div><div class="meta"><b>${label}</b> · ${pct(rows.length?n/rows.length:0)}</div></div>`;
+  let stageI=0;
+  const stage=(n,label,color)=>`<div class="fstage" style="--i:${stageI++}"><div class="bar2" style="width:${Math.max(8,100*n/fmax)}%;background:${color}">${int(n)}</div><div class="meta"><b>${label}</b> · ${pct(rows.length?n/rows.length:0)}</div></div>`;
   $("funnel").innerHTML = stage(rows.length,"All cases",COL.navy)+stage(openN,"In progress",COL.teal)+stage(completed,"Completed",COL.green)+stage(closedN,"Closed, no fill",COL.soft);
 
   renderTrend(rows);
@@ -1235,14 +1236,25 @@ $("scen").addEventListener("click",(e)=>{
 });
 
 // ---- reveal-on-scroll animation ----
-let io;
+let io, revealRescue;
 function reveal(){
   const els=[...document.querySelectorAll(".kpi,.panel")];
   els.forEach((el,i)=>{ el.classList.remove("vis"); el.style.setProperty("--i", (el.classList.contains("kpi")?i%6:0)); });
+  void document.body.offsetWidth; // flush the removal so re-adding .vis restarts animations
   if(io) io.disconnect();
+  if(revealRescue) clearTimeout(revealRescue);
   if(matchMedia("(prefers-reduced-motion:reduce)").matches){ els.forEach(el=>el.classList.add("vis")); return; }
   io=new IntersectionObserver((ents)=>{ for(const e of ents) if(e.isIntersecting){ e.target.classList.add("vis"); io.unobserve(e.target); } },{threshold:.08});
   els.forEach(el=>io.observe(el));
+  // rescue: if the observer hasn't fired for something already on screen
+  // (it can be flaky right after big re-renders), reveal it anyway
+  revealRescue=setTimeout(()=>{
+    for(const el of els){
+      if(el.classList.contains("vis")) continue;
+      const r=el.getBoundingClientRect();
+      if(r.bottom>0&&r.top<innerHeight){ el.classList.add("vis"); io.unobserve(el); }
+    }
+  },450);
 }
 
 // ---- calendar range picker ----

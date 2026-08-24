@@ -292,7 +292,8 @@
   @media (prefers-reduced-motion:reduce) { *,*::before { animation:none !important; transition:none !important; } .kpi,.panel{opacity:1;} }
 
   @media print {
-    header.top .tbtn, .filters, .chips { display:none !important; }
+    header.top .tbtn, .filters, .chips, #sidebar, #menu-btn { display:none !important; }
+    .maincol { margin-left:0 !important; }
     body { background:#fff; }
     .kpi,.panel { opacity:1 !important; animation:none !important; box-shadow:none; border-color:#ccc; break-inside:avoid; }
     .linechart polyline.draw, .linechart path, .linechart circle, .slbar, .slbar .seg, .slbar .dedline, .slbar .halfline, .slbar .laserline { animation:none !important; opacity:1 !important; stroke-dashoffset:0 !important; }
@@ -345,7 +346,7 @@
 
   <div class="wrap">
     <div id="qbr-view" hidden>
-      <div class="filters"><label style="font-size:12px;color:var(--mute);letter-spacing:.04em;text-transform:uppercase;font-weight:700;margin-right:2px">Client</label><select class="periodsel" id="qbr-client"></select></div>
+      <div class="filters"><label style="font-size:12px;color:var(--mute);letter-spacing:.04em;text-transform:uppercase;font-weight:700;margin-right:2px">Client</label><select class="periodsel" id="qbr-client"></select><button class="exp" id="qbr-pdf" type="button">EXPORT PDF</button></div>
       <div class="kpis" id="qbr-kpis"></div>
       <div class="grid" id="qbr-grid"></div>
     </div>
@@ -555,7 +556,7 @@ function qbrBars(items,fmt){ if(!items.length) return '<div class="pending">No d
 
 function renderQBR(){
   const client=$("qbr-client").value;
-  const rows=RAW.filter(r=>clientOf(r)===client);
+  const rows = client ? RAW.filter(r=>clientOf(r)===client) : RAW.slice();
   const D="—";
   const total=rows.reduce((a,r)=>a+num(r.avalon_savings),0);
   const awp=rows.reduce((a,r)=>a+num(r.awp),0);
@@ -599,8 +600,9 @@ function renderQBR(){
 
 function initQBR(){
   const clients=[...new Set(RAW.map(clientOf).filter(c=>c&&c!=="—"))].sort();
-  $("qbr-client").innerHTML=clients.map(c=>`<option>${esc(c)}</option>`).join("");
+  $("qbr-client").innerHTML='<option value="">All Clients</option>'+clients.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("");
   $("qbr-client").addEventListener("change",renderQBR);
+  $("qbr-pdf").addEventListener("click",()=>{ document.querySelectorAll(".kpi,.panel").forEach(el=>el.classList.add("vis")); setTimeout(()=>window.print(),80); });
   QBR_INIT=true;
 }
 

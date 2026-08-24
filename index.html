@@ -548,6 +548,9 @@ $("theme-btn").addEventListener("click",()=>setTheme(!document.documentElement.c
 // Drivers/Engagement come from data flowing today; Satisfaction/Response
 // auto-populate if/when survey + milestone fields land in the feed.
 let QBR_INIT=false;
+// Covered lives per client — source of truth is Accounts."Covered Lives" in Zoho
+// (field created 2026-08-24); mirror the values here until the account sync exists.
+const PLAN_TOTALS = { };
 const qbrIsDecline=(r)=>/declin|opt|refus|no response|not interested|unable to reach/i.test(r.closed_reason||"");
 const qbrKpi=(k,v,s,a)=>`<div class="kpi" style="--accent:${a}"><div class="k">${k}</div><div class="v num">${v}</div><div class="s">${s||""}</div></div>`;
 const qbrCell=(k,v,s)=>`<div class="cell"><div class="k">${k}</div><div class="v num">${v}</div>${s?`<div class="s">${esc(s)}</div>`:""}</div>`;
@@ -581,8 +584,11 @@ function renderQBR(){
   const npsTxt=nps==null?D:(nps>0?"+"+nps:""+nps);
   const surveyN=Math.max(npsVals.length,exp.length);
 
+  const planTotal = client ? (PLAN_TOTALS[client]||null)
+    : (Object.keys(PLAN_TOTALS).length ? Object.values(PLAN_TOTALS).reduce((a,b)=>a+b,0) : null);
+  const pctPlan=(n)=>planTotal?Math.round(n/planTotal*100)+"% of plan":null;
   $("qbr-kpis").innerHTML=[
-    qbrKpi("Active Members",active.size,"members engaged",COL.navy),
+    qbrKpi("Active Members",active.size,pctPlan(active.size)||"members engaged",COL.navy),
     qbrKpi("NPS Score",npsTxt,nps==null?"survey pending":surveyN+" responses",COL.teal),
     qbrKpi("Open Cases",open.length,memOpen+" members",COL.blue),
     qbrKpi("Total Savings",money(total),rows.length?avgCase+" / case":"",COL.green),
@@ -591,7 +597,11 @@ function renderQBR(){
   ].join("");
 
   const g=[];
-  g.push(qbrPanel("span4","Member Engagement",'<div class="pk">'+qbrCell("Active",active.size,"engaged")+qbrCell("Declined",declined.size,"opted out")+qbrCell("Plan Total",D,"add census")+'</div>'));
+  g.push(qbrPanel("span4","Member Engagement",'<div class="pk">'+
+    qbrCell("Active",active.size,pctPlan(active.size)||"engaged")+
+    qbrCell("Declined",declined.size,pctPlan(declined.size)||"opted out")+
+    qbrCell("Plan Total",planTotal==null?D:planTotal.toLocaleString(),planTotal==null?"enter Covered Lives in Zoho":"covered lives")+'</div>'+
+    (planTotal==null?'':'<div class="pending" style="margin-top:10px">Utilization: '+Math.round(active.size/planTotal*1000)/10+'% of covered lives have engaged the program.</div>')));
   g.push(qbrPanel("span4","Member Satisfaction", (nps==null&&expAvg==null)
     ? '<div class="pending">NPS &amp; experience sync from Zoho — pending the survey pipeline (see note).</div>'
     : '<div class="pk">'+qbrCell("NPS",npsTxt,prom+" prom · "+det+" det")+qbrCell("Experience",expAvg==null?D:expAvg.toFixed(1),"of 5")+qbrCell("Responses",surveyN,"surveys")+'</div>'));

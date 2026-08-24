@@ -551,7 +551,9 @@ let QBR_INIT=false;
 // Covered lives per client — source of truth is Accounts."Covered Lives" in Zoho
 // (field created 2026-08-24); mirror the values here until the account sync exists.
 const PLAN_TOTALS = { };
-const qbrIsDecline=(r)=>/declin|opt|refus|no response|not interested|unable to reach/i.test(r.closed_reason||"");
+// member-driven declines, matched to the ACTUAL Closed_Reason picklist values
+// (audit 2026-08-24) plus the "Closed Member Declined" status
+const qbrIsDecline=(r)=>/member has declined|member unresponsive|member abandoned/i.test(r.closed_reason||"")||/closed member declined/i.test(r.status||"");
 const qbrKpi=(k,v,s,a)=>`<div class="kpi" style="--accent:${a}"><div class="k">${k}</div><div class="v num">${v}</div><div class="s">${s||""}</div></div>`;
 const qbrCell=(k,v,s)=>`<div class="cell"><div class="k">${k}</div><div class="v num">${v}</div>${s?`<div class="s">${esc(s)}</div>`:""}</div>`;
 const qbrPanel=(span,kick,inner)=>`<div class="panel ${span}"><div class="kicker">${kick}</div>${inner}</div>`;
@@ -563,7 +565,7 @@ function renderQBR(){
   const D="—";
   const total=rows.reduce((a,r)=>a+num(r.avalon_savings),0);
   const awp=rows.reduce((a,r)=>a+num(r.awp),0);
-  const open=rows.filter(r=>!isClosed(r.status));
+  const open=rows.filter(r=>!isClosed(r.status)&&!isCompleted(r.status)); // "Completed" doesn't start with "Closed"
   const memOpen=new Set(open.map(r=>r.member_ref).filter(Boolean)).size;
   const active=new Set(rows.map(r=>r.member_ref).filter(Boolean));
   const declined=new Set(rows.filter(qbrIsDecline).map(r=>r.member_ref).filter(Boolean));
@@ -602,9 +604,12 @@ function renderQBR(){
     qbrCell("Declined",declined.size,pctPlan(declined.size)||"opted out")+
     qbrCell("Plan Total",planTotal==null?D:planTotal.toLocaleString(),planTotal==null?"enter Covered Lives in Zoho":"covered lives")+'</div>'+
     (planTotal==null?'':'<div class="pending" style="margin-top:10px">Utilization: '+Math.round(active.size/planTotal*1000)/10+'% of covered lives have engaged the program.</div>')));
+  const doneCases=rows.filter(r=>isClosed(r.status)||isCompleted(r.status)).length;
+  const surveyedN=rows.filter(r=>r.survey_completed==="yes").length;
+  const complPct=(surveyedN&&doneCases)?Math.round(surveyedN/doneCases*100)+"%":D;
   g.push(qbrPanel("span4","Member Satisfaction", (nps==null&&expAvg==null)
     ? '<div class="pending">NPS &amp; experience sync from Zoho — pending the survey pipeline (see note).</div>'
-    : '<div class="pk">'+qbrCell("NPS",npsTxt,prom+" prom · "+det+" det")+qbrCell("Experience",expAvg==null?D:expAvg.toFixed(1),"of 5")+qbrCell("Responses",surveyN,"surveys")+'</div>'));
+    : '<div class="pk">'+qbrCell("NPS",npsTxt,prom+" prom · "+det+" det")+qbrCell("Experience",expAvg==null?D:expAvg.toFixed(1),"of 5")+qbrCell("Surveyed",complPct,surveyN+" responses · of closed cases")+'</div>'));
   g.push(qbrPanel("span4","Cases",'<div class="pk" style="grid-template-columns:repeat(2,1fr)">'+qbrCell("Open",open.length,"in progress")+qbrCell("Members",memOpen,"with open cases")+'</div>'));
   g.push(qbrPanel("span6","Savings",'<div class="pk">'+qbrCell("Total",money(total),"delivered")+qbrCell("Avg / Case",avgCase,"")+qbrCell("AWP Discount",awpDisc,"vs list")+'</div>'));
   g.push(qbrPanel("span6","Savings Drivers",'<div class="pk">'+qbrCell("Largest",rank.length?money(rank[0][1]):D,rank.length?rank[0][0]:"")+qbrCell("Smallest",rank.length?money(rank[rank.length-1][1]):D,rank.length?rank[rank.length-1][0]:"")+qbrCell("Member Avg",mv.length?money(mv.reduce((a,b)=>a+b,0)/mv.length):D,"")+qbrCell("Member Max",mv.length?money(Math.max(...mv)):D,"")+qbrCell("Member Min",mv.length?money(Math.min(...mv)):D,"")+qbrCell("Members",active.size,"total")+'</div>'));

@@ -513,6 +513,7 @@ async function unlock(pw){
   sessionStorage.setItem(PW_KEY,pw);
   RAW = out.cases||[];
   setPlanTotals(out.covered_lives);
+  setAcctProfiles(out.account_profiles);
   CLIENT = out.client||null;
   if(CLIENT){
     document.querySelector(".top .titles .t").textContent = CLIENT.label+" · Utilization & Savings";
@@ -551,9 +552,10 @@ $("theme-btn").addEventListener("click",()=>setTheme(!document.documentElement.c
 let QBR_INIT=false;
 // Covered lives per client — pushed from Accounts."Covered Lives" in Zoho via
 // the push_covered_lives Deluge function; arrives on the feed as covered_lives.
-let PLAN_TOTALS = { };
+let PLAN_TOTALS = { }, ACCT_PROFILES = { };
 const normClient=(c)=>c==="Marpai Health"?"Marpai":c;
 function setPlanTotals(m){ PLAN_TOTALS={}; for(const [k,v] of Object.entries(m||{})) if(Number.isFinite(Number(v))&&Number(v)>0) PLAN_TOTALS[normClient(k)]=Number(v); }
+function setAcctProfiles(m){ ACCT_PROFILES={}; for(const [k,v] of Object.entries(m||{})) ACCT_PROFILES[normClient(k)]=v||{}; }
 // member-driven declines, matched to the ACTUAL Closed_Reason picklist values
 // (audit 2026-08-24) plus the "Closed Member Declined" status
 const qbrIsDecline=(r)=>/member has declined|member unresponsive|member abandoned/i.test(r.closed_reason||"")||/closed member declined/i.test(r.status||"");
@@ -565,6 +567,14 @@ function qbrBars(items,fmt){ if(!items.length) return '<div class="pending">No d
 function renderQBR(){
   const client=$("qbr-client").value;
   const rows = client ? RAW.filter(r=>clientOf(r)===client) : RAW.slice();
+  if(client && !rows.length){
+    const pt=PLAN_TOTALS[client];
+    $("qbr-kpis").innerHTML="";
+    $("qbr-grid").innerHTML=qbrPanel("span12","Member Engagement",
+      '<div class="pending">No cases yet for '+esc(client)+(pt?' — 0 of '+pt.toLocaleString()+' covered lives have engaged the program.':' — signed but not yet engaged.')+'</div>');
+    reveal();
+    return;
+  }
   const D="—";
   const total=rows.reduce((a,r)=>a+num(r.avalon_savings),0);
   const awp=rows.reduce((a,r)=>a+num(r.awp),0);
@@ -646,8 +656,15 @@ function renderQBR(){
 }
 
 function initQBR(){
-  const clients=[...new Set(RAW.map(clientOf).filter(c=>c&&c!=="—"))].sort();
-  $("qbr-client").innerHTML='<option value="">All Clients</option>'+clients.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("");
+  // clients with cases + AA-flagged accounts with none (visible as "not yet engaged")
+  const caseClients=new Set(RAW.map(clientOf).filter(c=>c&&c!=="—"));
+  const aaOnly=Object.entries(ACCT_PROFILES).filter(([c,p])=>p.aa_client==="yes"&&!caseClients.has(c)).map(([c])=>c);
+  const clients=[...caseClients].sort().concat(aaOnly.sort());
+  $("qbr-client").innerHTML='<option value="">All Clients</option>'+clients.map(c=>{
+    const p=ACCT_PROFILES[c]||{};
+    const suffix=(!caseClients.has(c)?" (no cases yet)":"")+(/term/i.test(p.status||"")?" (termed)":"");
+    return `<option value="${esc(c)}">${esc(c)}${suffix}</option>`;
+  }).join("");
   $("qbr-client").addEventListener("change",renderQBR);
   $("qbr-pdf").addEventListener("click",()=>{ document.querySelectorAll(".kpi,.panel").forEach(el=>el.classList.add("vis")); setTimeout(()=>window.print(),80); });
   QBR_INIT=true;

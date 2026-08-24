@@ -601,6 +601,17 @@ function renderQBR(){
   g.push(qbrPanel("span6","Largest Savings Drivers · by medication",qbrBars(rank.slice(0,8).map(([d,a])=>({label:d,amount:a})).filter(x=>x.amount>0),money)));
   const decl={}; for(const r of rows.filter(qbrIsDecline)){ const rz=r.closed_reason||"Other"; decl[rz]=(decl[rz]||0)+1; }
   g.push(qbrPanel("span6","Why Members Decline",qbrBars(Object.entries(decl).sort((a,b)=>b[1]-a[1]).map(([r,n])=>({label:r,amount:n})),v=>v)));
+  // response times — averaged from milestone dates when present (400d sanity cap)
+  const dBet=(a,b)=>{ if(!a||!b)return null; const t=(new Date(b+"T12:00:00")-new Date(a+"T12:00:00"))/86400000; return (isFinite(t)&&t>=0&&t<400)?t:null; };
+  const iv=(f,t2)=>{ const v=rows.map(r=>dBet(r[f],r[t2])).filter(x=>x!=null); return v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length):null; };
+  const rpn={pf:iv("request_date","first_contact_date"),fo:iv("first_contact_date","order_date"),fd:iv("first_contact_date","initial_fill_date"),pd:iv("request_date","initial_fill_date"),sd:iv("rx_script_date","initial_fill_date"),oc:iv("created_date","closed_date")};
+  const rv=(x)=>x==null?D:x;
+  g.push(qbrPanel("span12","Response Time · average days",
+    '<div class="pk">'+
+    qbrCell("PA → 1st Contact",rv(rpn.pf),"days")+qbrCell("1st Contact → Order",rv(rpn.fo),"days")+
+    qbrCell("1st Contact → Drug Rcvd",rv(rpn.fd),"days")+qbrCell("PA → Drug Rcvd",rv(rpn.pd),"days")+
+    qbrCell("Rx Script → Drug Rcvd",rv(rpn.sd),"days")+qbrCell("Case Open → Closed",rv(rpn.oc),"days")+'</div>'+
+    ((rpn.pf==null||rpn.fo==null)?'<div class="pending" style="margin-top:10px">1st-contact / order intervals need the new “First Contact Date” and “Order Date” fields in Zoho; the others populate once the date backfill runs.</div>':'')));
   $("qbr-grid").innerHTML=g.join("");
   reveal();
 }

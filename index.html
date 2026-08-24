@@ -512,6 +512,7 @@ async function unlock(pw){
   const out = await res.json();
   sessionStorage.setItem(PW_KEY,pw);
   RAW = out.cases||[];
+  setPlanTotals(out.covered_lives);
   CLIENT = out.client||null;
   if(CLIENT){
     document.querySelector(".top .titles .t").textContent = CLIENT.label+" · Utilization & Savings";
@@ -548,9 +549,11 @@ $("theme-btn").addEventListener("click",()=>setTheme(!document.documentElement.c
 // Drivers/Engagement come from data flowing today; Satisfaction/Response
 // auto-populate if/when survey + milestone fields land in the feed.
 let QBR_INIT=false;
-// Covered lives per client — source of truth is Accounts."Covered Lives" in Zoho
-// (field created 2026-08-24); mirror the values here until the account sync exists.
-const PLAN_TOTALS = { };
+// Covered lives per client — pushed from Accounts."Covered Lives" in Zoho via
+// the push_covered_lives Deluge function; arrives on the feed as covered_lives.
+let PLAN_TOTALS = { };
+const normClient=(c)=>c==="Marpai Health"?"Marpai":c;
+function setPlanTotals(m){ PLAN_TOTALS={}; for(const [k,v] of Object.entries(m||{})) if(Number.isFinite(Number(v))&&Number(v)>0) PLAN_TOTALS[normClient(k)]=Number(v); }
 // member-driven declines, matched to the ACTUAL Closed_Reason picklist values
 // (audit 2026-08-24) plus the "Closed Member Declined" status
 const qbrIsDecline=(r)=>/member has declined|member unresponsive|member abandoned/i.test(r.closed_reason||"")||/closed member declined/i.test(r.status||"");
@@ -612,7 +615,11 @@ function renderQBR(){
     : '<div class="pk">'+qbrCell("NPS",npsTxt,prom+" prom · "+det+" det")+qbrCell("Experience",expAvg==null?D:expAvg.toFixed(1),"of 5")+qbrCell("Surveyed",complPct,surveyN+" responses · of closed cases")+'</div>'));
   g.push(qbrPanel("span4","Cases",'<div class="pk" style="grid-template-columns:repeat(2,1fr)">'+qbrCell("Open",open.length,"in progress")+qbrCell("Members",memOpen,"with open cases")+'</div>'));
   g.push(qbrPanel("span6","Savings",'<div class="pk">'+qbrCell("Total",money(total),"delivered")+qbrCell("Avg / Case",avgCase,"")+qbrCell("AWP Discount",awpDisc,"vs list")+'</div>'));
-  g.push(qbrPanel("span6","Savings Drivers",'<div class="pk">'+qbrCell("Largest",rank.length?money(rank[0][1]):D,rank.length?rank[0][0]:"")+qbrCell("Smallest",rank.length?money(rank[rank.length-1][1]):D,rank.length?rank[rank.length-1][0]:"")+qbrCell("Member Avg",mv.length?money(mv.reduce((a,b)=>a+b,0)/mv.length):D,"")+qbrCell("Member Max",mv.length?money(Math.max(...mv)):D,"")+qbrCell("Member Min",mv.length?money(Math.min(...mv)):D,"")+qbrCell("Members",active.size,"total")+'</div>'));
+  const dsElig=rows.filter(r=>r.day_supply_eligible==="yes");
+  const conv90=dsElig.length?Math.round(dsElig.filter(r=>r.converted_90d==="yes").length/dsElig.length*100)+"%":D;
+  const wu=rows.filter(r=>(r.would_use_again||"")!=="");
+  const wuPct=wu.length?Math.round(wu.filter(r=>r.would_use_again==="Yes").length/wu.length*100)+"%":D;
+  g.push(qbrPanel("span6","Savings Drivers",'<div class="pk">'+qbrCell("30d→90d",conv90,dsElig.length?dsElig.length+" eligible":"needs fill data")+qbrCell("Largest",rank.length?money(rank[0][1]):D,rank.length?rank[0][0]:"")+qbrCell("Smallest",rank.length?money(rank[rank.length-1][1]):D,rank.length?rank[rank.length-1][0]:"")+qbrCell("Member Avg",mv.length?money(mv.reduce((a,b)=>a+b,0)/mv.length):D,"")+qbrCell("Member Max",mv.length?money(Math.max(...mv)):D,"")+qbrCell("Would Use Again",wuPct,wu.length?wu.length+" answered":"survey pending")+'</div>'));
   g.push(qbrPanel("span6","Largest Savings Drivers · by medication",qbrBars(rank.slice(0,8).map(([d,a])=>({label:d,amount:a})).filter(x=>x.amount>0),money)));
   const decl={}; for(const r of rows.filter(qbrIsDecline)){ const rz=r.closed_reason||"Other"; decl[rz]=(decl[rz]||0)+1; }
   g.push(qbrPanel("span6","Why Members Decline",qbrBars(Object.entries(decl).sort((a,b)=>b[1]-a[1]).map(([r,n])=>({label:r,amount:n})),v=>v)));
@@ -627,6 +634,13 @@ function renderQBR(){
     qbrCell("1st Contact → Drug Rcvd",rv(rpn.fd),"days")+qbrCell("PA → Drug Rcvd",rv(rpn.pd),"days")+
     qbrCell("Rx Script → Drug Rcvd",rv(rpn.sd),"days")+qbrCell("Case Open → Closed",rv(rpn.oc),"days")+'</div>'+
     ((rpn.pf==null||rpn.fo==null)?'<div class="pending" style="margin-top:10px">1st-contact / order intervals need the new “First Contact Date” and “Order Date” fields in Zoho; the others populate once the date backfill runs.</div>':'')));
+  // member survey comments (internal view; PHI-scrubbed server-side)
+  const cmts=rows.filter(r=>(r.survey_comments||"").trim()!=="");
+  if(cmts.length){
+    g.push(qbrPanel("span12","Member Comments · from surveys",
+      cmts.slice(0,20).map(r=>`<div style="border-bottom:1px solid var(--hair2);padding:9px 0;font-size:13.5px"><span style="color:var(--soft);font-style:italic">“${esc(r.survey_comments)}”</span><span style="color:var(--mute);font-size:11.5px"> — ${esc(normMed(r.medication_name)||"case")}, ${esc((r.closed_date||r.created_date||"").slice(0,7))}</span></div>`).join("")+
+      (cmts.length>20?`<div class="pending" style="margin-top:8px">+ ${cmts.length-20} more</div>`:"")));
+  }
   $("qbr-grid").innerHTML=g.join("");
   reveal();
 }

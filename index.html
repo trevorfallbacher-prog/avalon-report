@@ -570,13 +570,20 @@ function renderQBR(){
   const mv=Object.values(byMem);
   const awpDisc=awp?Math.round(total/awp*100)+"%":D;
   const avgCase=rows.length?money(total/rows.length):D;
-  // forward-compatible: light up satisfaction if the survey fields arrive in RAW
+  // forward-compatible: light up satisfaction the moment survey fields land in RAW.
+  // nps_recommend = the 0–10 "how likely to recommend" question → true NPS
+  // (% promoters[9-10] − % detractors[0-6]); experience_score = 1–5 CSAT.
+  const npsVals=rows.map(r=>r.nps_recommend).filter(v=>typeof v==="number");
   const exp=rows.map(r=>r.experience_score).filter(v=>typeof v==="number");
   const expAvg=exp.length?exp.reduce((a,b)=>a+b,0)/exp.length:null;
+  let nps=null,prom=0,det=0;
+  if(npsVals.length){ prom=npsVals.filter(v=>v>=9).length; det=npsVals.filter(v=>v<=6).length; nps=Math.round((prom-det)/npsVals.length*100); }
+  const npsTxt=nps==null?D:(nps>0?"+"+nps:""+nps);
+  const surveyN=Math.max(npsVals.length,exp.length);
 
   $("qbr-kpis").innerHTML=[
     qbrKpi("Active Members",active.size,"members engaged",COL.navy),
-    qbrKpi("Satisfaction",expAvg==null?D:expAvg.toFixed(1)+"/5",expAvg==null?"survey pending":exp.length+" responses",COL.teal),
+    qbrKpi("NPS Score",npsTxt,nps==null?"survey pending":surveyN+" responses",COL.teal),
     qbrKpi("Open Cases",open.length,memOpen+" members",COL.blue),
     qbrKpi("Total Savings",money(total),rows.length?avgCase+" / case":"",COL.green),
     qbrKpi("AWP Discount",awpDisc,"vs list price",COL.gold),
@@ -585,9 +592,9 @@ function renderQBR(){
 
   const g=[];
   g.push(qbrPanel("span4","Member Engagement",'<div class="pk">'+qbrCell("Active",active.size,"engaged")+qbrCell("Declined",declined.size,"opted out")+qbrCell("Plan Total",D,"add census")+'</div>'));
-  g.push(qbrPanel("span4","Member Satisfaction", expAvg==null
-    ? '<div class="pending">NPS, experience and comments sync from Zoho — pending the survey pipeline.</div>'
-    : '<div class="pk">'+qbrCell("Experience",expAvg.toFixed(1),"of 5")+qbrCell("Responses",exp.length,"surveys")+'</div>'));
+  g.push(qbrPanel("span4","Member Satisfaction", (nps==null&&expAvg==null)
+    ? '<div class="pending">NPS &amp; experience sync from Zoho — pending the survey pipeline (see note).</div>'
+    : '<div class="pk">'+qbrCell("NPS",npsTxt,prom+" prom · "+det+" det")+qbrCell("Experience",expAvg==null?D:expAvg.toFixed(1),"of 5")+qbrCell("Responses",surveyN,"surveys")+'</div>'));
   g.push(qbrPanel("span4","Cases",'<div class="pk" style="grid-template-columns:repeat(2,1fr)">'+qbrCell("Open",open.length,"in progress")+qbrCell("Members",memOpen,"with open cases")+'</div>'));
   g.push(qbrPanel("span6","Savings",'<div class="pk">'+qbrCell("Total",money(total),"delivered")+qbrCell("Avg / Case",avgCase,"")+qbrCell("AWP Discount",awpDisc,"vs list")+'</div>'));
   g.push(qbrPanel("span6","Savings Drivers",'<div class="pk">'+qbrCell("Largest",rank.length?money(rank[0][1]):D,rank.length?rank[0][0]:"")+qbrCell("Smallest",rank.length?money(rank[rank.length-1][1]):D,rank.length?rank[rank.length-1][0]:"")+qbrCell("Member Avg",mv.length?money(mv.reduce((a,b)=>a+b,0)/mv.length):D,"")+qbrCell("Member Max",mv.length?money(Math.max(...mv)):D,"")+qbrCell("Member Min",mv.length?money(Math.min(...mv)):D,"")+qbrCell("Members",active.size,"total")+'</div>'));

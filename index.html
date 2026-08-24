@@ -99,6 +99,22 @@
   .tabs .tab.on { color:var(--navy); border-bottom-color:var(--teal); }
   .pending { color:var(--mute); font-size:12.5px; font-style:italic; }
 
+  /* left sidebar shell (matches AAPS) */
+  #sidebar { position:fixed; left:0; top:0; bottom:0; width:236px; z-index:45; background:var(--card); border-right:1px solid var(--hair); padding:22px 14px 20px; overflow-y:auto; display:flex; flex-direction:column; transition:transform .25s ease-out, background .3s, border-color .3s; }
+  .side-logo { padding:2px 10px 18px; } .side-logo .logo svg { width:126px; height:auto; }
+  .side-sec { font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--mute); font-weight:700; margin:4px 10px 8px; }
+  #side-nav { display:flex; flex-direction:column; gap:4px; }
+  #side-nav button { display:flex; align-items:center; gap:11px; width:100%; border:0; background:none; text-align:left; border-radius:10px; color:var(--soft); font-size:14px; font-weight:600; padding:10px 12px; transition:background .15s,color .15s; }
+  #side-nav button:hover { background:var(--hair2); color:var(--ink); }
+  #side-nav button.on { background:color-mix(in srgb, var(--teal) 14%, transparent); color:var(--teal); }
+  #side-nav svg { width:18px; height:18px; flex:0 0 auto; }
+  .side-foot { margin-top:auto; padding:14px 10px 0; border-top:1px solid var(--hair2); display:flex; align-items:center; gap:9px; }
+  .side-foot .dot { width:7px; height:7px; border-radius:50%; background:var(--good); box-shadow:0 0 6px rgba(62,142,90,.5); flex:0 0 auto; }
+  .side-foot .stamp2 { font-family:var(--mono); font-size:10.5px; color:var(--mute); letter-spacing:.03em; }
+  .maincol { margin-left:236px; min-height:100vh; }
+  #menu-btn { display:none; border:1px solid var(--hair); background:var(--card); color:var(--soft); border-radius:8px; padding:6px 10px; font-size:16px; cursor:pointer; }
+  @media (max-width:1024px){ #sidebar{ transform:translateX(-100%);} #sidebar.open{ transform:none; box-shadow:0 0 0 100vmax rgba(10,30,45,.45),0 10px 40px rgba(10,30,45,.35);} .maincol{ margin-left:0;} #menu-btn{ display:inline-flex;} }
+
   /* active-filter chips */
   .chips { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:20px; }
   .chips:empty { margin-bottom:0; }
@@ -301,9 +317,19 @@
 </div>
 
 <div id="app">
+  <aside id="sidebar">
+    <div class="side-logo"><div class="logo"></div></div>
+    <div class="side-sec">Menu</div>
+    <nav id="side-nav">
+      <button class="on" data-tab="util" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg>Utilization &amp; Savings</button>
+      <button data-tab="qbr" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="7"/><rect x="12" y="6" width="3" height="11"/><rect x="17" y="13" width="3" height="4"/></svg>Client Business Review</button>
+    </nav>
+    <div class="side-foot"><span class="dot"></span><span class="stamp2">Avalon Assist · internal</span></div>
+  </aside>
+  <div class="maincol">
   <header class="top">
     <div class="top-in">
-      <div class="logo"></div>
+      <button id="menu-btn" type="button" aria-label="Menu">☰</button>
       <div class="titles">
         <div class="k">Avalon Assist</div>
         <div class="t">Utilization &amp; Savings</div>
@@ -318,10 +344,6 @@
   </header>
 
   <div class="wrap">
-    <div class="tabs" id="tabs">
-      <button class="tab on" data-tab="util" type="button">Utilization &amp; Savings</button>
-      <button class="tab" data-tab="qbr" type="button">Client Business Review</button>
-    </div>
     <div id="qbr-view" hidden>
       <div class="filters"><label style="font-size:12px;color:var(--mute);letter-spacing:.04em;text-transform:uppercase;font-weight:700;margin-right:2px">Client</label><select class="periodsel" id="qbr-client"></select></div>
       <div class="kpis" id="qbr-kpis"></div>
@@ -448,6 +470,7 @@
   </div>
   <footer id="foot"></footer>
   <div id="cal-pop" hidden></div>
+  </div><!-- /maincol -->
 </div>
 
 <script>
@@ -581,15 +604,18 @@ function initQBR(){
   QBR_INIT=true;
 }
 
-$("tabs").addEventListener("click",(e)=>{
-  const b=e.target.closest(".tab"); if(!b) return;
+$("side-nav").addEventListener("click",(e)=>{
+  const b=e.target.closest("button[data-tab]"); if(!b) return;
   const util=b.dataset.tab==="util";
-  [...document.querySelectorAll("#tabs .tab")].forEach(x=>x.classList.toggle("on",x===b));
+  [...document.querySelectorAll("#side-nav button")].forEach(x=>x.classList.toggle("on",x===b));
   for(const id of ["filters","chips","kpis","grid"]){ const el=$(id); if(el) el.style.display=util?"":"none"; }
   $("qbr-view").hidden=util;
+  $("sidebar").classList.remove("open");
   if(util){ reveal(); }
   else { if(!QBR_INIT) initQBR(); renderQBR(); }
 });
+$("menu-btn").addEventListener("click",()=>$("sidebar").classList.toggle("open"));
+document.addEventListener("click",(e)=>{ if(!e.target.closest("#sidebar") && !e.target.closest("#menu-btn")) $("sidebar").classList.remove("open"); });
 
 // ---- slicers (multi-select pops) ----
 const SL = { client:{label:"Clients",val:clientOf}, source:{label:"Channels",val:r=>r.source||"—"}, status:{label:"Status",val:r=>r.status||"—"} };

@@ -92,6 +92,13 @@
   .filters .exp { border:1px solid var(--hair); background:var(--card); color:var(--soft); border-radius:8px; padding:7px 12px; font-family:var(--mono); font-size:12px; letter-spacing:.06em; }
   .filters .exp:hover { border-color:var(--teal); color:var(--teal); }
 
+  /* view tabs (Utilization / Client Business Review) */
+  .tabs { display:flex; gap:4px; margin-bottom:16px; border-bottom:1px solid var(--hair); }
+  .tabs .tab { background:none; border:0; border-bottom:2px solid transparent; color:var(--soft); padding:9px 15px; font-size:13.5px; font-weight:700; letter-spacing:.02em; }
+  .tabs .tab:hover { color:var(--teal); }
+  .tabs .tab.on { color:var(--navy); border-bottom-color:var(--teal); }
+  .pending { color:var(--mute); font-size:12.5px; font-style:italic; }
+
   /* active-filter chips */
   .chips { display:flex; gap:7px; flex-wrap:wrap; margin-bottom:20px; }
   .chips:empty { margin-bottom:0; }
@@ -311,6 +318,15 @@
   </header>
 
   <div class="wrap">
+    <div class="tabs" id="tabs">
+      <button class="tab on" data-tab="util" type="button">Utilization &amp; Savings</button>
+      <button class="tab" data-tab="qbr" type="button">Client Business Review</button>
+    </div>
+    <div id="qbr-view" hidden>
+      <div class="filters"><label style="font-size:12px;color:var(--mute);letter-spacing:.04em;text-transform:uppercase;font-weight:700;margin-right:2px">Client</label><select class="periodsel" id="qbr-client"></select></div>
+      <div class="kpis" id="qbr-kpis"></div>
+      <div class="grid" id="qbr-grid"></div>
+    </div>
     <div class="filters" id="filters">
       <div class="slicer sl-client"><button class="iconbtn" data-sl="client" type="button">CLIENTS ▾</button><div class="pop" hidden></div></div>
       <div class="slicer sl-source"><button class="iconbtn" data-sl="source" type="button">CHANNELS ▾</button><div class="pop" hidden></div></div>
@@ -502,6 +518,78 @@ function setTheme(dark){
 }
 $("theme-btn").addEventListener("click",()=>setTheme(!document.documentElement.classList.contains("dark")));
 (function initTheme(){ const s=localStorage.getItem("avalon-theme"); setTheme(s?s==="dark":matchMedia("(prefers-color-scheme:dark)").matches); })();
+
+// ---- Client Business Review tab (QBR) — computed from the same RAW cases,
+// filtered to one client, reusing the report's components. Savings/Cases/
+// Drivers/Engagement come from data flowing today; Satisfaction/Response
+// auto-populate if/when survey + milestone fields land in the feed.
+let QBR_INIT=false;
+const qbrIsDecline=(r)=>/declin|opt|refus|no response|not interested|unable to reach/i.test(r.closed_reason||"");
+const qbrKpi=(k,v,s,a)=>`<div class="kpi" style="--accent:${a}"><div class="k">${k}</div><div class="v num">${v}</div><div class="s">${s||""}</div></div>`;
+const qbrCell=(k,v,s)=>`<div class="cell"><div class="k">${k}</div><div class="v num">${v}</div>${s?`<div class="s">${esc(s)}</div>`:""}</div>`;
+const qbrPanel=(span,kick,inner)=>`<div class="panel ${span}"><div class="kicker">${kick}</div>${inner}</div>`;
+function qbrBars(items,fmt){ if(!items.length) return '<div class="pending">No data.</div>'; const mx=Math.max(...items.map(i=>i.amount),1); return '<div class="bars">'+items.map((i,ix)=>`<div class="bar" style="--i:${ix}"><span class="lbl">${esc(i.label)}</span><span class="track"><span class="fill" style="width:${Math.max(2,i.amount/mx*100)}%"></span></span><span class="val">${fmt(i.amount)}</span></div>`).join('')+'</div>'; }
+
+function renderQBR(){
+  const client=$("qbr-client").value;
+  const rows=RAW.filter(r=>clientOf(r)===client);
+  const D="—";
+  const total=rows.reduce((a,r)=>a+num(r.avalon_savings),0);
+  const awp=rows.reduce((a,r)=>a+num(r.awp),0);
+  const open=rows.filter(r=>!isClosed(r.status));
+  const memOpen=new Set(open.map(r=>r.member_ref).filter(Boolean)).size;
+  const active=new Set(rows.map(r=>r.member_ref).filter(Boolean));
+  const declined=new Set(rows.filter(qbrIsDecline).map(r=>r.member_ref).filter(Boolean));
+  const byDrug={}; for(const r of rows){ const d=normMed(r.medication_name)||"—"; byDrug[d]=(byDrug[d]||0)+num(r.avalon_savings); }
+  const rank=Object.entries(byDrug).sort((a,b)=>b[1]-a[1]);
+  const byMem={}; for(const r of rows){ if(r.member_ref) byMem[r.member_ref]=(byMem[r.member_ref]||0)+num(r.avalon_savings); }
+  const mv=Object.values(byMem);
+  const awpDisc=awp?Math.round(total/awp*100)+"%":D;
+  const avgCase=rows.length?money(total/rows.length):D;
+  // forward-compatible: light up satisfaction if the survey fields arrive in RAW
+  const exp=rows.map(r=>r.experience_score).filter(v=>typeof v==="number");
+  const expAvg=exp.length?exp.reduce((a,b)=>a+b,0)/exp.length:null;
+
+  $("qbr-kpis").innerHTML=[
+    qbrKpi("Active Members",active.size,"members engaged",COL.navy),
+    qbrKpi("Satisfaction",expAvg==null?D:expAvg.toFixed(1)+"/5",expAvg==null?"survey pending":exp.length+" responses",COL.teal),
+    qbrKpi("Open Cases",open.length,memOpen+" members",COL.blue),
+    qbrKpi("Total Savings",money(total),rows.length?avgCase+" / case":"",COL.green),
+    qbrKpi("AWP Discount",awpDisc,"vs list price",COL.gold),
+    qbrKpi("Cases",rows.length,"in period",COL.navy),
+  ].join("");
+
+  const g=[];
+  g.push(qbrPanel("span4","Member Engagement",'<div class="pk">'+qbrCell("Active",active.size,"engaged")+qbrCell("Declined",declined.size,"opted out")+qbrCell("Plan Total",D,"add census")+'</div>'));
+  g.push(qbrPanel("span4","Member Satisfaction", expAvg==null
+    ? '<div class="pending">NPS, experience and comments sync from Zoho — pending the survey pipeline.</div>'
+    : '<div class="pk">'+qbrCell("Experience",expAvg.toFixed(1),"of 5")+qbrCell("Responses",exp.length,"surveys")+'</div>'));
+  g.push(qbrPanel("span4","Cases",'<div class="pk" style="grid-template-columns:repeat(2,1fr)">'+qbrCell("Open",open.length,"in progress")+qbrCell("Members",memOpen,"with open cases")+'</div>'));
+  g.push(qbrPanel("span6","Savings",'<div class="pk">'+qbrCell("Total",money(total),"delivered")+qbrCell("Avg / Case",avgCase,"")+qbrCell("AWP Discount",awpDisc,"vs list")+'</div>'));
+  g.push(qbrPanel("span6","Savings Drivers",'<div class="pk">'+qbrCell("Largest",rank.length?money(rank[0][1]):D,rank.length?rank[0][0]:"")+qbrCell("Smallest",rank.length?money(rank[rank.length-1][1]):D,rank.length?rank[rank.length-1][0]:"")+qbrCell("Member Avg",mv.length?money(mv.reduce((a,b)=>a+b,0)/mv.length):D,"")+qbrCell("Member Max",mv.length?money(Math.max(...mv)):D,"")+qbrCell("Member Min",mv.length?money(Math.min(...mv)):D,"")+qbrCell("Members",active.size,"total")+'</div>'));
+  g.push(qbrPanel("span6","Largest Savings Drivers · by medication",qbrBars(rank.slice(0,8).map(([d,a])=>({label:d,amount:a})).filter(x=>x.amount>0),money)));
+  const decl={}; for(const r of rows.filter(qbrIsDecline)){ const rz=r.closed_reason||"Other"; decl[rz]=(decl[rz]||0)+1; }
+  g.push(qbrPanel("span6","Why Members Decline",qbrBars(Object.entries(decl).sort((a,b)=>b[1]-a[1]).map(([r,n])=>({label:r,amount:n})),v=>v)));
+  $("qbr-grid").innerHTML=g.join("");
+  reveal();
+}
+
+function initQBR(){
+  const clients=[...new Set(RAW.map(clientOf).filter(c=>c&&c!=="—"))].sort();
+  $("qbr-client").innerHTML=clients.map(c=>`<option>${esc(c)}</option>`).join("");
+  $("qbr-client").addEventListener("change",renderQBR);
+  QBR_INIT=true;
+}
+
+$("tabs").addEventListener("click",(e)=>{
+  const b=e.target.closest(".tab"); if(!b) return;
+  const util=b.dataset.tab==="util";
+  [...document.querySelectorAll("#tabs .tab")].forEach(x=>x.classList.toggle("on",x===b));
+  for(const id of ["filters","chips","kpis","grid"]){ const el=$(id); if(el) el.style.display=util?"":"none"; }
+  $("qbr-view").hidden=util;
+  if(util){ reveal(); }
+  else { if(!QBR_INIT) initQBR(); renderQBR(); }
+});
 
 // ---- slicers (multi-select pops) ----
 const SL = { client:{label:"Clients",val:clientOf}, source:{label:"Channels",val:r=>r.source||"—"}, status:{label:"Status",val:r=>r.status||"—"} };

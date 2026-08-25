@@ -139,7 +139,7 @@
   .kicker .hint { color:var(--mute); font-weight:400; letter-spacing:0; text-transform:none; }
 
   /* KPI band */
-  .kpis { display:grid; grid-template-columns:repeat(6,1fr); gap:14px; margin-bottom:18px; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(175px,1fr)); gap:14px; margin-bottom:18px; }
   @media(max-width:900px){ .kpis{ grid-template-columns:repeat(2,1fr);} }
   .kpi { background:var(--card); border:1px solid var(--hair); border-radius:14px; box-shadow:var(--shadow); padding:15px 16px; position:relative; overflow:hidden; }
   .kpi::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--accent,var(--teal)); }
@@ -804,10 +804,8 @@ function render(){
     if(F.client.size===1) return PLAN_TOTALS[[...F.client][0]]||null;
     return null; })();
   $("kpis").innerHTML =
-    kpi(moneyK(savings),"Avalon Savings",pct(awp?savings/awp:0)+" of AWP",COL.green,
-      "Recorded savings on the filtered cases: AWP list price minus the AA price actually paid, summed per fill.")+
-    kpi(moneyK(awp),"Total AWP","list price avoided",COL.navy,
-      "Sum of AWP list price on the same fills — what the plan would have been billed without the program. Savings vs AWP is the headline economics.")+
+    kpi(moneyK(savings),"Avalon Savings","of "+moneyK(awp)+" AWP list price · "+pct(awp?savings/awp:0),COL.green,
+      "Recorded savings on the filtered cases: AWP list price minus the AA price actually paid. The AWP figure is what the plan would have been billed without the program.")+
     kpi(int(rows.length),"Cases",int(completed)+" completed · "+int(openAll)+" open",COL.teal,
       "All case rows under the current filters, with the completed/open split. One case is roughly one ~90-day fill; refills create new cases.")+
     kpi(int(members),"Unique Members",planTotal?("of "+int(planTotal)+" plan members ("+pct(members/planTotal)+")"):(int(utilMembers)+" utilizing (completed a fill)"),COL.navy,

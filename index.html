@@ -354,7 +354,7 @@
       <div class="slicer sl-client"><button class="iconbtn" data-sl="client" type="button">CLIENTS ▾</button><div class="pop" hidden></div></div>
       <div class="slicer sl-source"><button class="iconbtn" data-sl="source" type="button">CHANNELS ▾</button><div class="pop" hidden></div></div>
       <div class="slicer sl-status"><button class="iconbtn" data-sl="status" type="button">STATUS ▾</button><div class="pop" hidden></div></div>
-      <select class="periodsel" id="gran"><option value="Y">Yearly</option><option value="Q" selected>Quarterly</option><option value="M">Monthly</option></select>
+      <select class="periodsel" id="gran"><option value="Y">Yearly</option><option value="Q" selected>Quarterly</option><option value="M">Monthly</option><option value="W">Weekly</option></select>
       <div class="slicer sl-tf"><button class="iconbtn" data-sl="tf" type="button" id="tf-btn">Quarters ▾</button><div class="pop" hidden></div></div>
       <button class="iconbtn" id="cal-btn" type="button">📅 Date Range</button>
       <button class="exp" id="csv-btn" type="button">Export CSV</button>
@@ -426,7 +426,8 @@
         <div class="pnote" id="corridor-note"></div>
       </div>
       <div class="panel span7">
-        <div class="kicker" title="Case volume over time, colored by outcome." id="trend-kicker">Cases per quarter <span class="hint">· by outcome</span></div>
+        <div class="kicker" title="Volume or dollars over time. Cases are colored by outcome; Savings and Claim amount show dollars per period." style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span id="trend-kicker">Cases per quarter <span class="hint">· by outcome</span></span>
+          <span class="scen" id="trend-mode"><button type="button" data-tm="cases" class="on">Cases</button><button type="button" data-tm="sav">Savings $</button><button type="button" data-tm="awp">Claim $</button></span></div>
         <div class="cols" id="trend"></div>
         <div class="legend" id="trend-legend" style="flex-direction:row;gap:16px;margin-top:14px;flex-wrap:wrap"></div>
       </div>
@@ -515,8 +516,9 @@ const isClosed=(s)=>s.startsWith("Closed");
 const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const monthLabel=(m)=>{if(!/^\d{4}-\d{2}$/.test(m))return m;const[y,mo]=m.split("-");return MON[+mo-1]+" "+y.slice(2);};
 // period key + label per granularity, from a case's created_date/month
-function periodKey(r){ const d=(r.created_date||r.month||"")+""; if(F.gran==="Y")return d.slice(0,4); if(F.gran==="M")return d.slice(0,7); const mo=+d.slice(5,7); return d.slice(0,4)+"-Q"+(Math.ceil(mo/3)||1); }
-function periodLabel(k){ if(F.gran==="Y")return k; if(F.gran==="M")return monthLabel(k); const[y,q]=k.split("-Q"); return q+"Q "+y.slice(2); }
+function isoWeek(dstr){ const d=new Date(dstr+"T12:00:00"); if(isNaN(d))return ""; const t=new Date(d); t.setDate(t.getDate()+3-((t.getDay()+6)%7)); const wy=t.getFullYear(); const jan4=new Date(wy,0,4); const w=1+Math.round(((t-jan4)/86400000-3+((jan4.getDay()+6)%7))/7); return wy+"-W"+String(w).padStart(2,"0"); }
+function periodKey(r){ const d=(r.created_date||r.month||"")+""; if(F.gran==="Y")return d.slice(0,4); if(F.gran==="M")return d.slice(0,7); if(F.gran==="W")return isoWeek(d.slice(0,10)); const mo=+d.slice(5,7); return d.slice(0,4)+"-Q"+(Math.ceil(mo/3)||1); }
+function periodLabel(k){ if(F.gran==="Y")return k; if(F.gran==="M")return monthLabel(k); if(F.gran==="W")return k.replace(/^\d{2}(\d{2})-W/, "W$1·").split("·").reverse().join(" ’"); const[y,q]=k.split("-Q"); return q+"Q "+y.slice(2); }
 
 // ---- gate ----
 async function unlock(pw){
@@ -730,7 +732,7 @@ function syncPopChecks(pop,active){
 }
 document.querySelectorAll(".slicer .iconbtn").forEach(b=>b.addEventListener("click",(e)=>{e.stopPropagation();openPop(b.dataset.sl);}));
 document.addEventListener("click",(e)=>{ if(!e.target.closest(".slicer")) document.querySelectorAll(".pop").forEach(p=>p.hidden=true); });
-$("gran").addEventListener("change",(e)=>{ F.gran=e.target.value; F.tf.clear(); $("tf-btn").textContent=({Y:"Years",Q:"Quarters",M:"Months"}[F.gran])+" ▾"; render(); });
+$("gran").addEventListener("change",(e)=>{ F.gran=e.target.value; F.tf.clear(); $("tf-btn").textContent=({Y:"Years",Q:"Quarters",M:"Months",W:"Weeks"}[F.gran])+" ▾"; render(); });
 
 // ---- filtering ----
 function passes(r,ignoreMember){
@@ -902,9 +904,24 @@ function donut(segs,size){
     p+=`<path d="M${x1.toFixed(1)} ${y1.toFixed(1)} A${r} ${r} 0 ${large} 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L${xi2.toFixed(1)} ${yi2.toFixed(1)} A${ir} ${ir} 0 ${large} 0 ${xi1.toFixed(1)} ${yi1.toFixed(1)} Z" fill="${s.color}"/>`; a=a2; }
   return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${p}</svg>`;
 }
+let TREND_MODE="cases";
 function renderTrend(rows){
-  $("trend-kicker").innerHTML = `Cases per ${({Y:"year",Q:"quarter",M:"month"}[F.gran])} <span class="hint">· by outcome</span>`;
+  const gname=({Y:"year",Q:"quarter",M:"month",W:"week"}[F.gran]);
   const keys=[...new Set(rows.map(periodKey))].filter(Boolean).sort();
+  if(TREND_MODE!=="cases"){
+    const sav=TREND_MODE==="sav";
+    $("trend-kicker").innerHTML = `${sav?"Savings":"Claim amount (AWP)"} per ${gname} <span class="hint">· ${sav?"recorded savings, dated by case":"AWP list dollars on cases opened"}</span>`;
+    const data=keys.map(k=>{ const mr=rows.filter(r=>periodKey(r)===k); return {k,v:mr.reduce((a,r)=>a+num(sav?r.avalon_savings:r.awp),0)}; });
+    const max=Math.max(...data.map(d=>d.v),1);
+    const color=sav?COL.green:COL.navy;
+    $("trend").innerHTML = data.map((d,i)=>`<div class="col" style="--i:${i}" title="${periodLabel(d.k)}: ${money(d.v)}">
+        <div class="tot num">${d.v?moneyK(d.v):""}</div>
+        <div class="stk" style="height:${Math.max(2,100*d.v/max)}%"><div class="seg" style="height:100%;background:${color}"></div></div>
+        <div class="cl">${periodLabel(d.k)}</div></div>`).join("") || `<div style="color:var(--mute);font-size:13px">No data.</div>`;
+    $("trend-legend").innerHTML=`<div class="li"><span class="sw" style="background:${color}"></span>${sav?"Avalon savings":"AWP list price"} per ${gname}</div>`;
+    return;
+  }
+  $("trend-kicker").innerHTML = `Cases per ${gname} <span class="hint">· by outcome</span>`;
   const data=keys.map(k=>{ const mr=rows.filter(r=>periodKey(r)===k); return {k,completed:mr.filter(r=>isCompleted(r.status)).length,open:mr.filter(r=>isOpen(r.status)).length,closed:mr.filter(r=>isClosed(r.status)).length,tot:mr.length}; });
   const max=Math.max(...data.map(d=>d.tot),1);
   $("trend").innerHTML = data.map((d,i)=>`<div class="col" style="--i:${i}" title="${periodLabel(d.k)}: ${d.tot} cases">
@@ -916,6 +933,10 @@ function renderTrend(rows){
       </div><div class="cl">${periodLabel(d.k)}</div></div>`).join("") || `<div style="color:var(--mute);font-size:13px">No data.</div>`;
   $("trend-legend").innerHTML=[["Completed",COL.green],["In progress",COL.teal],["Closed, no fill",COL.soft]].map(([l,c])=>`<div class="li"><span class="sw" style="background:${c}"></span>${l}</div>`).join("");
 }
+document.addEventListener("click",(e)=>{ const b=e.target.closest("#trend-mode button"); if(!b) return;
+  TREND_MODE=b.dataset.tm;
+  document.querySelectorAll("#trend-mode button").forEach(x=>x.classList.toggle("on",x===b));
+  render(); });
 
 // monthly stacked: first-time case starts, refill case starts, fills completed
 function renderFillsTrend(rows,isRefill){

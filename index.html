@@ -346,7 +346,7 @@
 
   <div class="wrap">
     <div id="qbr-view" hidden>
-      <div class="filters"><label style="font-size:12px;color:var(--mute);letter-spacing:.04em;text-transform:uppercase;font-weight:700;margin-right:2px">Client</label><select class="periodsel" id="qbr-client"></select><button class="exp" id="qbr-pdf" type="button">EXPORT PDF</button></div>
+      <div class="filters"><label style="font-size:12px;color:var(--mute);letter-spacing:.04em;text-transform:uppercase;font-weight:700;margin-right:2px">Client</label><select class="periodsel" id="qbr-client"></select><button class="exp" id="qbr-pdf" type="button">Export PDF</button></div>
       <div class="kpis" id="qbr-kpis"></div>
       <div class="grid" id="qbr-grid"></div>
     </div>
@@ -355,10 +355,10 @@
       <div class="slicer sl-source"><button class="iconbtn" data-sl="source" type="button">CHANNELS ▾</button><div class="pop" hidden></div></div>
       <div class="slicer sl-status"><button class="iconbtn" data-sl="status" type="button">STATUS ▾</button><div class="pop" hidden></div></div>
       <select class="periodsel" id="gran"><option value="Y">Yearly</option><option value="Q" selected>Quarterly</option><option value="M">Monthly</option></select>
-      <div class="slicer sl-tf"><button class="iconbtn" data-sl="tf" type="button" id="tf-btn">QUARTERS ▾</button><div class="pop" hidden></div></div>
-      <button class="iconbtn" id="cal-btn" type="button">📅 DATE RANGE</button>
-      <button class="exp" id="csv-btn" type="button">EXPORT CSV</button>
-      <button class="exp" id="pdf-btn" type="button">EXPORT PDF</button>
+      <div class="slicer sl-tf"><button class="iconbtn" data-sl="tf" type="button" id="tf-btn">Quarters ▾</button><div class="pop" hidden></div></div>
+      <button class="iconbtn" id="cal-btn" type="button">📅 Date Range</button>
+      <button class="exp" id="csv-btn" type="button">Export CSV</button>
+      <button class="exp" id="pdf-btn" type="button">Export PDF</button>
       <span class="count" id="f-count"></span>
     </div>
     <div class="chips" id="chips"></div>
@@ -434,6 +434,20 @@
         <div class="kicker" title="Share of case volume by sourcing channel.">Volume by channel</div>
         <div class="donut-wrap"><div id="src-donut"></div><div class="legend" id="src-legend"></div></div>
       </div>
+      <div class="panel span7">
+        <div class="kicker" title="Monthly case starts split into first-time cases vs refills, plus fills completed that month.">Fills &amp; refills per month <span class="hint">· new cases, refills, completed fills</span></div>
+        <div class="cols" id="fills-trend"></div>
+        <div class="legend" id="fills-legend" style="flex-direction:row;gap:16px;margin-top:14px;flex-wrap:wrap"></div>
+      </div>
+      <div class="panel span5">
+        <div class="kicker" title="How long from opening a case to the fill shipping, averaged per month of completion.">Turnaround tracker <span class="hint">· avg days to fill, by month</span></div>
+        <div class="bars" id="ta-bars"></div>
+        <div class="pnote" id="ta-note"></div>
+      </div>
+      <div class="panel span12">
+        <div class="kicker" title="Avalon programs beyond Assist and whether this plan uses them.">Program participation</div>
+        <div id="programs-rows"></div>
+      </div>
       <div class="panel span6">
         <div class="kicker" title="Most frequent medications by case count under the current filters.">Top medications <span class="hint">· by case count</span></div>
         <div class="bars" id="top-meds"></div>
@@ -453,7 +467,7 @@
           </table>
         </div>
         <div class="pnote" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-          <button class="exp" id="mem-all" type="button">SHOW ALL</button><span id="mem-note"></span>
+          <button class="exp" id="mem-all" type="button">Show All</button><span id="mem-note"></span>
         </div>
       </div>
       <div class="panel span12">
@@ -716,7 +730,7 @@ function syncPopChecks(pop,active){
 }
 document.querySelectorAll(".slicer .iconbtn").forEach(b=>b.addEventListener("click",(e)=>{e.stopPropagation();openPop(b.dataset.sl);}));
 document.addEventListener("click",(e)=>{ if(!e.target.closest(".slicer")) document.querySelectorAll(".pop").forEach(p=>p.hidden=true); });
-$("gran").addEventListener("change",(e)=>{ F.gran=e.target.value; F.tf.clear(); $("tf-btn").textContent=({Y:"YEARS",Q:"QUARTERS",M:"MONTHS"}[F.gran])+" ▾"; render(); });
+$("gran").addEventListener("change",(e)=>{ F.gran=e.target.value; F.tf.clear(); $("tf-btn").textContent=({Y:"Years",Q:"Quarters",M:"Months"}[F.gran])+" ▾"; render(); });
 
 // ---- filtering ----
 function passes(r,ignoreMember){
@@ -759,7 +773,7 @@ function render(){
   for(const dim of ["client","source","status"]){
     const btn=document.querySelector(`.slicer.sl-${dim} .iconbtn`);
     btn.classList.toggle("on",F[dim].size>0);
-    btn.textContent = (F[dim].size?`${F[dim].size} ${SL[dim].label.toUpperCase()}`:SL[dim].label.toUpperCase())+" ▾";
+    btn.textContent = (F[dim].size?`${F[dim].size} ${SL[dim].label}`:SL[dim].label)+" ▾";
   }
   $("tf-btn").classList.toggle("on",F.tf.size>0);
   $("cal-btn").classList.toggle("on",!!F.range);
@@ -776,21 +790,34 @@ function render(){
 
   const kpi=(v,k,s,a,t)=>`<div class="kpi" style="--accent:${a}"${t?` title="${esc(t)}"`:""}><div class="k">${k}</div><div class="v num">${v}</div><div class="s">${s}</div></div>`;
   const openAll=rows.filter(r=>isOpen(r.status)).length;
+  // refill = a later case for a (member, med) pair already seen in the book;
+  // fill turnaround = created -> closed on completed cases with both dates
+  const firstCase=new Map();
+  for(const r of RAW){ const k=(r.member_ref||"")+"|"+normMed(r.medication_name); const d=r.created_date||""; if(d && (!firstCase.has(k)||d<firstCase.get(k))) firstCase.set(k,d); }
+  const isRefill=(r)=>{ const k=(r.member_ref||"")+"|"+normMed(r.medication_name); return !!r.member_ref && firstCase.get(k)!==(r.created_date||""); };
+  const refills=rows.filter(isRefill).length;
+  const taDays=rows.filter(r=>isCompleted(r.status)&&r.created_date&&r.closed_date)
+    .map(r=>(new Date(r.closed_date)-new Date(r.created_date))/86400000).filter(d=>d>=0&&d<400);
+  const avgTA=taDays.length?Math.round(taDays.reduce((a,b)=>a+b,0)/taDays.length):null;
+  const utilMembers=new Set(rows.filter(r=>isCompleted(r.status)).map(r=>r.member_ref).filter(Boolean)).size;
+  const planTotal=(function(){ if(CLIENT) return PLAN_TOTALS[normClient(CLIENT.label)]||null;
+    if(F.client.size===1) return PLAN_TOTALS[[...F.client][0]]||null;
+    return null; })();
   $("kpis").innerHTML =
     kpi(moneyK(savings),"Avalon Savings",pct(awp?savings/awp:0)+" of AWP",COL.green,
       "Recorded savings on the filtered cases: AWP list price minus the AA price actually paid, summed per fill.")+
     kpi(moneyK(awp),"Total AWP","list price avoided",COL.navy,
-      "Sum of AWP list price on the same fills — what the plan would have been billed without the program.")+
-    kpi(int(rows.length),"Cases",int(members)+" unique members",COL.teal,
-      "Case rows under the current filters. One case is roughly one ~90-day fill; refills create new cases.")+
-    kpi(int(completed),"Completed",pct(rows.length?completed/rows.length:0)+" of cases",COL.green,
-      "Cases where the switch completed and the fill shipped.")+
-    (CLIENT? kpi(int(openAll),"Open Cases","in progress now",COL.blue,
-      "Cases currently being worked — sourcing, paperwork, or awaiting the member.")
-           : kpi(moneyK(fee),"Avalon Fee","program revenue",COL.blue,
-      "Program revenue billed on completed savings (about 20% of savings where charged)."))+
-    kpi(completed?moneyK(savings/completed):"—","Savings / Completed","per filled case",COL.gold,
-      "Average savings per completed fill: Avalon Savings divided by completed cases.");
+      "Sum of AWP list price on the same fills — what the plan would have been billed without the program. Savings vs AWP is the headline economics.")+
+    kpi(int(rows.length),"Cases",int(completed)+" completed · "+int(openAll)+" open",COL.teal,
+      "All case rows under the current filters, with the completed/open split. One case is roughly one ~90-day fill; refills create new cases.")+
+    kpi(int(members),"Unique Members",planTotal?("of "+int(planTotal)+" plan members ("+pct(members/planTotal)+")"):(int(utilMembers)+" utilizing (completed a fill)"),COL.navy,
+      planTotal?"Distinct members with cases vs the plan's covered lives.":"Distinct members with cases; 'utilizing' means at least one completed fill. Covered-lives total appears when entered on the client account.")+
+    (CLIENT? kpi(avgTA!=null?avgTA+"d":"—","Avg Turnaround",int(completed)+" fills · "+int(refills)+" refills",COL.blue,
+      "Average days from case opened to fill completed, on completed cases with both dates.")
+           : kpi(moneyK(fee),"Avalon Fee","program revenue · avg turnaround "+(avgTA!=null?avgTA+"d":"—"),COL.blue,
+      "Program revenue billed on completed savings (about 20% of savings where charged). Turnaround = avg days case-open to fill.")) +
+    kpi(completed?moneyK(savings/completed):"—","Savings / Completed",(rows.length?moneyK(savings/rows.length):"—")+" avg per case",COL.gold,
+      "Average savings per completed fill; the subtitle averages over ALL cases including open and closed-no-fill.");
 
   hbars($("ch-savings"),agg(rows,r=>r.source,r=>num(r.avalon_savings)).filter(d=>d.v>0).sort((a,b)=>b.v-a.v),moneyK,COL.green);
 
@@ -800,6 +827,9 @@ function render(){
   $("funnel").innerHTML = stage(rows.length,"All cases",COL.navy)+stage(openN,"In progress",COL.teal)+stage(completed,"Completed",COL.green)+stage(closedN,"Closed, no fill",COL.soft);
 
   renderTrend(rows);
+  renderFillsTrend(rows,isRefill);
+  renderTurnaround(rows);
+  renderPrograms(planTotal);
   renderProjections(rows);
 
   const srcVol=agg(rows,r=>r.source,()=>1).sort((a,b)=>b.v-a.v);
@@ -848,7 +878,7 @@ function renderMembers(rows){
       <td>${esc(medTxt)}</td>
       <td class="r num">${money(o.awp)}</td><td class="r num"><b>${money(o.sav)}</b></td>${CLIENT?"":`<td class="r num">${money(o.fee)}</td>`}</tr>`;
   }).join("") || `<tr><td colspan="8" style="color:var(--mute)">No members under these filters.</td></tr>`;
-  $("mem-all").textContent = MEM_ALL?"TOP 12":"SHOW ALL";
+  $("mem-all").textContent = MEM_ALL?"Top 12":"Show All";
   $("mem-all").style.display = list.length>12?"":"none";
   $("mem-note").textContent = `${list.length} members under current filters`+(MEM_ALL||list.length<=12?"":` · showing top 12 by savings`)+(noRef?` · ${noRef} cases have no member link`:"");
 }
@@ -889,6 +919,71 @@ function renderTrend(rows){
   $("trend-legend").innerHTML=[["Completed",COL.green],["In progress",COL.teal],["Closed, no fill",COL.soft]].map(([l,c])=>`<div class="li"><span class="sw" style="background:${c}"></span>${l}</div>`).join("");
 }
 
+// monthly stacked: first-time case starts, refill case starts, fills completed
+function renderFillsTrend(rows,isRefill){
+  const months=[...new Set(rows.flatMap(r=>[(r.created_date||"").slice(0,7),isCompleted(r.status)?(r.closed_date||"").slice(0,7):""]))].filter(m=>/^\d{4}-\d{2}$/.test(m)).sort();
+  const data=months.map(m=>{
+    const started=rows.filter(r=>(r.created_date||"").slice(0,7)===m);
+    const nw=started.filter(r=>!isRefill(r)).length, rf=started.length-nw;
+    const fl=rows.filter(r=>isCompleted(r.status)&&(r.closed_date||"").slice(0,7)===m).length;
+    return {m,nw,rf,fl,tot:nw+rf+fl};
+  }).filter(d=>d.tot>0);
+  const max=Math.max(...data.map(d=>d.tot),1);
+  $("fills-trend").innerHTML=data.map((d,i)=>`<div class="col" style="--i:${i}" title="${monthLabel(d.m)}: ${d.nw} new · ${d.rf} refills · ${d.fl} filled">
+      <div class="tot num">${d.tot||""}</div>
+      <div class="stk" style="height:${Math.max(2,100*d.tot/max)}%">
+        <div class="seg" style="height:${100*d.fl/d.tot}%;background:${COL.green}"></div>
+        <div class="seg" style="height:${100*d.rf/d.tot}%;background:${COL.gold}"></div>
+        <div class="seg" style="height:${100*d.nw/d.tot}%;background:${COL.teal}"></div>
+      </div><div class="cl">${monthLabel(d.m)}</div></div>`).join("") || `<div style="color:var(--mute);font-size:13px">No data.</div>`;
+  $("fills-legend").innerHTML=[["New cases",COL.teal],["Refill cases",COL.gold],["Fills completed",COL.green]].map(([l,c])=>`<div class="li"><span class="sw" style="background:${c}"></span>${l}</div>`).join("");
+}
+// avg days-to-fill per completion month
+function renderTurnaround(rows){
+  const done=rows.filter(r=>isCompleted(r.status)&&r.created_date&&r.closed_date)
+    .map(r=>({m:(r.closed_date||"").slice(0,7),d:(new Date(r.closed_date)-new Date(r.created_date))/86400000}))
+    .filter(x=>/^\d{4}-\d{2}$/.test(x.m)&&x.d>=0&&x.d<400);
+  const by={};
+  for(const x of done){ (by[x.m] ||= []).push(x.d); }
+  const data=Object.keys(by).sort().map(m=>({k:monthLabel(m),v:Math.round(by[m].reduce((a,b)=>a+b,0)/by[m].length)}));
+  hbars($("ta-bars"),data,(v)=>v+"d",COL.blue);
+  const all=done.map(x=>x.d);
+  $("ta-note").textContent=all.length
+    ? `Overall: ${Math.round(all.reduce((a,b)=>a+b,0)/all.length)} days average across ${all.length} completed fills (case opened → fill shipped). Faster months usually mean sourcing already in place; slower months track prior-auth and member paperwork.`
+    : "No completed fills with both dates under the current filters.";
+}
+// Avalon program rows beyond Assist. MyRxCard shows PROJECTED savings the plan
+// leaves off by not enrolling — anchored to the live program book (Jul 25 –
+// Jun 26 claims): $156.77 average member saving per prescription vs pharmacy
+// cash (U&C) prices across 97,030 net claims. Projection assumptions stated
+// inline. PAP is deliberately unprojected: eligibility-based (income mix).
+const MYRX_AVG_SAVED_PER_CLAIM = 156.77; // live book average, savedVsUC / net claims
+const MYRX_BOOK_CLAIMS = 97030;
+function renderPrograms(planTotal){
+  const progRow=(name,active,note,extra)=>`<div style="padding:10px 4px;border-bottom:1px solid var(--hair2);font-size:13.5px">
+    <div style="display:flex;align-items:center;gap:11px">
+    <span style="width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:${active?"var(--good)":"var(--mute)"};box-shadow:${active?"0 0 6px rgba(62,142,90,.5)":"none"}"></span>
+    <b style="min-width:120px">${name}</b><span style="color:var(--soft)">${note}</span></div>${extra||""}</div>`;
+  let myrxExtra="";
+  {
+    const lo=planTotal?Math.round(planTotal*0.05*12*MYRX_AVG_SAVED_PER_CLAIM):null; // 5% of members, 1 card script/mo
+    const hi=planTotal?Math.round(planTotal*0.10*12*MYRX_AVG_SAVED_PER_CLAIM):null; // 10%
+    const projTxt = planTotal
+      ? `Projected if turned on: <b style="color:var(--good)">${moneyK(lo)} – ${moneyK(hi)} / year</b> in member savings at 5–10% of ${int(planTotal)} covered lives filling one card prescription a month.`
+      : `Members on the live program save an average of <b style="color:var(--good)">${money(MYRX_AVG_SAVED_PER_CLAIM)}</b> per prescription vs pharmacy cash prices (measured across ${int(MYRX_BOOK_CLAIMS)} claims this year). Enter Covered Lives on the account to see a plan-level projection.`;
+    myrxExtra=`<div style="margin:8px 0 2px 20px;padding:10px 14px;border:1.5px dashed var(--green);border-radius:10px;background:transparent">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><span style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:var(--good)">Savings available — not switched on</span></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
+        <span style="font-size:11.5px;color:var(--mute);width:56px">Today</span><span style="flex:1;height:12px;border-radius:6px;background:var(--hair2)"></span><span class="num" style="font-size:12px;color:var(--mute)">$0</span></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span style="font-size:11.5px;color:var(--mute);width:56px">Potential</span><span style="flex:1;height:12px;border-radius:6px;background:repeating-linear-gradient(45deg,var(--green-soft),var(--green-soft) 6px,transparent 6px,transparent 11px);opacity:.8"></span><span class="num" style="font-size:12px;font-weight:700;color:var(--good)">${planTotal?moneyK(Math.round(planTotal*0.10*12*MYRX_AVG_SAVED_PER_CLAIM)):"—"}</span></div>
+      <div style="font-size:12.5px;color:var(--soft);line-height:1.55">${projTxt} Figures use the live MyRxCard book average — real claims, not modeled prices.</div></div>`;
+  }
+  $("programs-rows").innerHTML =
+    progRow("Avalon Assist",true,"Active — the case data in this report.")+
+    progRow("MyRxCard",false,"Not enrolled — this plan is not promoting MyRxCard.",myrxExtra)+
+    progRow("Avalon PAP",false,"Not enrolled in Avalon PAP. No projection modeled — PAP savings are eligibility-based (they depend on the plan's member income mix), but qualifying brand-drug fills typically recover the full drug cost.");
+}
 // ---- projections ----
 // Therapeutic classification by normalized drug name. Chronic maintenance therapies
 // refill indefinitely; oncology/limited-course persist ~1-2 yrs; acute courses don't recur.
